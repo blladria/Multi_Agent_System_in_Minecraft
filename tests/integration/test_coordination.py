@@ -115,11 +115,12 @@ async def test_full_workflow_coordination(setup_coordination_system):
 
     # --- FASE 4: Construcción (Builder se activa) ---
     
-    # Verificación 4.1: El BuilderBot debe empezar a construir.
-    await debug_state_wait(builder, AgentState.RUNNING, 5.0)
-    
-    assert builder.state == AgentState.RUNNING
-    assert builder.is_building is True
+    # Verificación 4.1: El BuilderBot debe empezar a construir y terminar.
+    # Se espera que regrese a IDLE tras completar todas las capas (el tiempo de espera es ahora para la finalización).
+    await debug_state_wait(builder, AgentState.IDLE, 5.0)
+     
+    assert builder.state == AgentState.IDLE
+    assert builder.is_building is False
     
     # Limpieza
     for task in agent_tasks.values():
