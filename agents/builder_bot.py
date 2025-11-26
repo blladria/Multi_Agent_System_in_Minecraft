@@ -10,12 +10,12 @@ from mcpi.vec3 import Vec3
 # Diccionario de plantillas de construcción simuladas
 BUILDING_TEMPLATES = {
     "shelter_basic": {
-        "materials": {"WOOD_PLANKS": 64, "STONE": 32, "GLASS": 4},
+        "materials": {"wood": 64, "stone": 32, "glass": 4},
         "size": (5, 3, 5), # (x, y, z)
         "description": "Un refugio simple de 5x3x5"
     },
     "tower_watch": {
-        "materials": {"COBBLESTONE": 128, "WOOD": 16, "LADDER": 8},
+        "materials": {"stone": 128, "wood": 16, "ladder": 8},
         "size": (3, 10, 3),
         "description": "Una torre de vigilancia de 3x10x3"
     }
@@ -135,8 +135,9 @@ class BuilderBot(BaseAgent):
         self.logger.info(f"BOM publicado a MinerBot. Materiales requeridos: {self.required_bom}")
 
     async def _execute_build_step(self):
-        """Coloca una capa de bloques en Minecraft."""
+        """Coloca una capa de bloques en Minecraft. (Corregida)"""
         if not self.construction_position:
+            # Asume que terrain_data ya está cargado con la corrección previa
             zone = self.terrain_data.get('optimal_zone', {}).get('center', {})
             x, y, z = zone.get('x', 0), zone.get('y_avg', 0), zone.get('z', 0)
             self.construction_position = Vec3(int(x), int(y) + 1, int(z)) 
@@ -144,8 +145,17 @@ class BuilderBot(BaseAgent):
         current_y = int(self.construction_position.y) + self.build_step
         size_x, size_y, size_z = self.current_plan["size"]
         
-        # Simulación: Construye el contorno de un rectángulo en la capa actual
-        mat_id = getattr(block, list(self.required_bom.keys())[0], block.STONE).id
+        # 1. Obtener el material clave (en minúscula, ej: 'wood')
+        material_key_lower = list(self.required_bom.keys())[0]
+        
+        # 2. Mapear el nombre a la constante de bloque en mayúsculas (McPi block constants)
+        material_name_uc = material_key_lower.upper() 
+        if material_name_uc == 'WOOD':
+            material_name_uc = 'WOOD_PLANKS'
+            
+        # 3. Obtener el ID del bloque usando el nombre en mayúsculas
+        # Si el nombre no existe, usa block.STONE por defecto
+        mat_id = getattr(block, material_name_uc, block.STONE).id
 
         # Coloca bloques en las 4 esquinas de la capa
         self.mc.setBlock(self.construction_position.x, current_y, self.construction_position.z, mat_id)
@@ -153,7 +163,7 @@ class BuilderBot(BaseAgent):
         self.mc.setBlock(self.construction_position.x, current_y, self.construction_position.z + size_z, mat_id)
         self.mc.setBlock(self.construction_position.x + size_x, current_y, self.construction_position.z + size_z, mat_id)
         
-        self.logger.info(f"Construyendo capa {self.build_step + 1}/{size_y} en Y={current_y}.")
+        self.logger.info(f"Construyendo capa {self.build_step + 1}/{size_y} en Y={current_y} con {material_key_lower}.")
         self.build_step += 1
 
     # --- Manejo de Mensajes (CORREGIDO) ---
