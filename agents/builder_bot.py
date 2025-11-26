@@ -135,35 +135,53 @@ class BuilderBot(BaseAgent):
         self.logger.info(f"BOM publicado a MinerBot. Materiales requeridos: {self.required_bom}")
 
     async def _execute_build_step(self):
-        """Coloca una capa de bloques en Minecraft. (Corregida)"""
+        """
+        Coloca una capa de bloques en Minecraft. 
+        (CORRECCIÓN: Dibuja el perímetro de la capa usando el material principal).
+        """
         if not self.construction_position:
-            # Asume que terrain_data ya está cargado con la corrección previa
+            # Inicializa la posición de construcción si no está definida
             zone = self.terrain_data.get('optimal_zone', {}).get('center', {})
-            x, y, z = zone.get('x', 0), zone.get('y_avg', 0), zone.get('z', 0)
-            self.construction_position = Vec3(int(x), int(y) + 1, int(z)) 
+            # Asume que 'y_avg' es la altura de la base. Construimos 1 bloque más alto.
+            x_start, y_start, z_start = zone.get('x', 0), zone.get('y_avg', 0), zone.get('z', 0)
+            self.construction_position = Vec3(int(x_start), int(y_start) + 1, int(z_start)) 
         
         current_y = int(self.construction_position.y) + self.build_step
         size_x, size_y, size_z = self.current_plan["size"]
         
-        # 1. Obtener el material clave (en minúscula, ej: 'wood')
-        material_key_lower = list(self.required_bom.keys())[0]
-        
-        # 2. Mapear el nombre a la constante de bloque en mayúsculas (McPi block constants)
-        material_name_uc = material_key_lower.upper() 
-        if material_name_uc == 'WOOD':
-            material_name_uc = 'WOOD_PLANKS'
-            
-        # 3. Obtener el ID del bloque usando el nombre en mayúsculas
-        # Si el nombre no existe, usa block.STONE por defecto
-        mat_id = getattr(block, material_name_uc, block.STONE).id
+        # 1. Obtener el material clave (el que se necesita en mayor cantidad)
+        if not self.required_bom:
+            mat_id = block.STONE.id
+            material_key_lower = "stone"
+        else:
+            # Uso de max() con una clave (Programación Funcional) para encontrar el material principal
+            primary_material_key = max(self.required_bom, key=self.required_bom.get)
+            material_key_lower = primary_material_key.lower()
 
-        # Coloca bloques en las 4 esquinas de la capa
-        self.mc.setBlock(self.construction_position.x, current_y, self.construction_position.z, mat_id)
-        self.mc.setBlock(self.construction_position.x + size_x, current_y, self.construction_position.z, mat_id)
-        self.mc.setBlock(self.construction_position.x, current_y, self.construction_position.z + size_z, mat_id)
-        self.mc.setBlock(self.construction_position.x + size_x, current_y, self.construction_position.z + size_z, mat_id)
+            # 2. Mapear el nombre a la constante de bloque
+            material_name_uc = material_key_lower.upper() 
+            if material_name_uc == 'WOOD':
+                material_name_uc = 'WOOD_PLANKS'
+                
+            # 3. Obtener el ID del bloque (Reflexión/getattr implícito)
+            mat_id = getattr(block, material_name_uc, block.STONE).id
+
+        # 4. Coloca la capa de bloques (dibuja el perímetro de la estructura)
+        x0 = self.construction_position.x
+        z0 = self.construction_position.z
+        x1 = x0 + size_x - 1
+        z1 = z0 + size_z - 1
         
-        self.logger.info(f"Construyendo capa {self.build_step + 1}/{size_y} en Y={current_y} con {material_key_lower}.")
+        # Dibuja las 4 paredes (perímetro) de la capa actual
+        for x in range(x0, x1 + 1):
+            self.mc.setBlock(x, current_y, z0, mat_id) # Pared Z=z0
+            self.mc.setBlock(x, current_y, z1, mat_id) # Pared Z=z1
+        for z in range(z0, z1 + 1):
+            # Nota: Esto podría redibujar las esquinas, pero garantiza un perímetro completo
+            self.mc.setBlock(x0, current_y, z, mat_id) # Pared X=x0
+            self.mc.setBlock(x1, current_y, z, mat_id) # Pared X=x1
+        
+        self.logger.info(f"Construyendo capa {self.build_step + 1}/{size_y} en Y={current_y} con {material_key_lower}. (Perímetro de {size_x}x{size_z})")
         self.build_step += 1
 
     # --- Manejo de Mensajes (CORREGIDO) ---
