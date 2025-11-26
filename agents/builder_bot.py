@@ -179,18 +179,17 @@ class BuilderBot(BaseAgent):
             
             elif command == 'pause': self.handle_pause()
             elif command == 'resume': self.handle_resume()
-            elif command == 'stop': self.handle_stop() 
+            elif command == 'stop': self.handle_stop() # <--- CORRECCIÓN PARA STOP
         
         elif msg_type == "map.v1":
             self.terrain_data = payload
-            # ExplorerBot publica map.v1 -> BuilderBot debe pasar a IDLE para forzar la planificación
-            self.state = AgentState.IDLE
+            # CORRECCIÓN: Forzar a RUNNING para planificar en el siguiente ciclo ACT
+            self.is_planning = True 
+            self.state = AgentState.RUNNING
             self.logger.info("Datos de mapa recibidos. Listo para planificar.")
 
         elif msg_type == "inventory.v1":
-            # Actualiza el inventario local con los datos del MinerBot
             self.current_inventory = payload.get("collected_materials", {})
-            # El estado WAITING será reevaluado en el siguiente ciclo DECIDE
             self.logger.info("Inventario actualizado.")
 
     def _parse_plan_command(self, params: Dict[str, Any]):

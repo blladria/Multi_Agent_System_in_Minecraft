@@ -46,7 +46,7 @@ async def test_full_workflow_coordination(setup_coordination_system):
         'miner': asyncio.create_task(miner.run_cycle()),
     }
     
-    await asyncio.sleep(5.3) # Más tiempo para que todos inicien en IDLE
+    await asyncio.sleep(0.3) # Más tiempo para que todos inicien en IDLE
 
     # --- FASE 1: Exploración (Explorer -> Builder) ---
     
@@ -60,23 +60,22 @@ async def test_full_workflow_coordination(setup_coordination_system):
     }
     await broker.publish(start_command)
     
-    # TIEMPO AJUSTADO: Dejar tiempo suficiente para el escaneo (3s en ACT) + procesamiento.
-    await asyncio.sleep(5.5) 
+    # TIEMPO AJUSTADO: Dejar tiempo suficiente para el escaneo (3s en ACT) + publicación.
+    await asyncio.sleep(4.5) 
 
     # Verificación 1.1: BuilderBot debe recibir el mapa y pasar a WAITING.
     assert builder.terrain_data is not None
-    # BuilderBot ejecuta ACT (publica BOM), y pasa a WAITING.
     assert builder.state == AgentState.WAITING
     
     # --- FASE 2/3: Minería y Suministro (Miner -> Builder) ---
 
     # El MinerBot debe estar en RUNNING (minando)
-    await asyncio.sleep(5.2) # Más tiempo para que el Miner procese el BOM
+    await asyncio.sleep(0.2) # Más tiempo para que el Miner procese el BOM
     assert miner.requirements != {}
     assert miner.state == AgentState.RUNNING 
 
-    # Permitir que el MinerBot minero corra por tiempo suficiente para cumplir requisitos.
-    time_to_mine = 40 # Tiempo aún más generoso para el cálculo asíncrono
+    # TIEMPO AJUSTADO: Permitir que el MinerBot minero corra por tiempo suficiente.
+    time_to_mine = 40 
     await asyncio.sleep(time_to_mine) 
     
     # Verificación 3.1: MinerBot debe haber cumplido requisitos y pasado a IDLE.
@@ -86,7 +85,7 @@ async def test_full_workflow_coordination(setup_coordination_system):
     # --- FASE 4: Construcción (Builder se activa) ---
     
     # BuilderBot debe recibir el último inventory.v1 y pasar de WAITING a RUNNING (Construcción)
-    await asyncio.sleep(5.0) # TIEMPO INCREMENTADO para procesar el inventory.v1 FINAL
+    await asyncio.sleep(1.0) # Tiempo suficiente para procesar el inventory.v1 FINAL
 
     # Verificación 4.1: El BuilderBot debe empezar a construir.
     assert builder.state == AgentState.RUNNING
