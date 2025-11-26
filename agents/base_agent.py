@@ -93,7 +93,7 @@ class BaseAgent(ABC):
 
     async def run_cycle(self):
         """Bucle principal de ejecución del agente. Usa asyncio para concurrencia."""
-        self.state = AgentState.RUNNING  # Empieza en RUNNING
+        self.state = AgentState.IDLE  # <--- CORRECCIÓN: Iniciar en IDLE
         self.logger.info("Ciclo de ejecución iniciado.")
 
         # Este bucle simula la operación continua del agente
@@ -101,14 +101,15 @@ class BaseAgent(ABC):
             await self.is_running.wait() # Bloquea aquí si el agente está PAUSED
             
             try:
-                # El ciclo se ejecuta solo en estado RUNNING
-                if self.state == AgentState.RUNNING:
+                # El ciclo sólo se ejecuta si el estado es RUNNING o WAITING
+                if self.state != AgentState.IDLE: 
                     await self.perceive()
                     await self.decide()
                     await self.act()
                     
                 # Espera breve para evitar el consumo excesivo de CPU
-                # (y para que la corrutina ceda el control a otras tareas)
+                # Este sleep es crucial para la asincronía, pero también para permitir
+                # que los comandos (que no son parte del ciclo) sean procesados por el broker.
                 await asyncio.sleep(0.1) 
 
             except Exception as e:
