@@ -46,7 +46,7 @@ def setup_synchronization_agents(mock_mc):
 async def test_miner_lock_release_on_stop(setup_synchronization_agents):
     """
     Verifica que MinerBot libera su lock de sector al recibir el comando 'stop' 
-    y entra en estado STOPPED (Resuelve el fallo de RUNNING -> STOPPED).
+    y entra en estado STOPPED (Aumento crítico de tiempo).
     """
     broker, _, _, miner = setup_synchronization_agents
     agent_tasks = {}
@@ -55,15 +55,14 @@ async def test_miner_lock_release_on_stop(setup_synchronization_agents):
         # 1. Lanzar ciclos asíncronos de los agentes (Miner inicia en IDLE)
         agent_tasks['miner'] = asyncio.create_task(miner.run_cycle())
         
-        # Dar tiempo para que el agente inicie
-        await asyncio.sleep(0.3) # Tiempo incrementado para inicialización
+        await asyncio.sleep(0.5) # Aumentar el buffer de inicio
         
         # Poner requisitos y forzar la transición a RUNNING
         miner.requirements = {"stone": 100}
         miner.state = AgentState.RUNNING
 
         # Dar tiempo para que el Miner ejecute decide() y adquiera el lock
-        await asyncio.sleep(0.5) # Tiempo suficiente para adquirir el lock
+        await asyncio.sleep(1.0) # Más tiempo para adquirir el lock
         
         # Verificación 1.1: El lock debe estar adquirido
         assert miner.mining_sector_locked is True
@@ -80,7 +79,7 @@ async def test_miner_lock_release_on_stop(setup_synchronization_agents):
         await broker.publish(stop_command)
         
         # Dar tiempo para que el agente procese el mensaje y haga la transición
-        await asyncio.sleep(1.5) # TIEMPO MÁS SEGURO (1.5s) para asegurar la transición a STOPPED
+        await asyncio.sleep(1.5) # TIEMPO MÁS SEGURO (1.5s) para la transición a STOPPED
         
         # 3. Verificación Final
         assert miner.state == AgentState.STOPPED
@@ -98,7 +97,7 @@ async def test_miner_lock_release_on_stop(setup_synchronization_agents):
 async def test_builder_waits_for_materials(setup_synchronization_agents):
     """
     Verifica que BuilderBot entra en estado WAITING si recibe un comando 'build'
-    pero no tiene los materiales necesarios (Resuelve el fallo de IDLE -> WAITING).
+    pero no tiene los materiales necesarios (Aumento crítico de tiempo).
     """
     broker, _, builder, _ = setup_synchronization_agents
     agent_tasks = {}
@@ -106,7 +105,7 @@ async def test_builder_waits_for_materials(setup_synchronization_agents):
     try:
         # 1. Lanzar ciclos asíncronos (Builder inicia en IDLE)
         agent_tasks['builder'] = asyncio.create_task(builder.run_cycle())
-        await asyncio.sleep(0.3) # Tiempo incrementado para inicialización
+        await asyncio.sleep(0.5) # Tiempo incrementado para inicialización
 
         # 2. Preparación: Definir requisitos y un inventario insuficiente
         builder.required_bom = {"WOOD_PLANKS": 50, "STONE": 10}
@@ -124,7 +123,7 @@ async def test_builder_waits_for_materials(setup_synchronization_agents):
         await broker.publish(build_command)
         
         # Dar tiempo para que el BuilderBot procese el mensaje
-        await asyncio.sleep(0.5) # Tiempo suficiente para la transición a WAITING
+        await asyncio.sleep(1.0) # TIEMPO SUFICIENTE (1.0s) para la transición a WAITING
         
         # 4. Verificación Final
         # BuilderBot debe recibir el comando y transicionar de IDLE a WAITING

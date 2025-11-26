@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Callable, Type
 from agents.base_agent import BaseAgent, AgentState
 from mcpi.vec3 import Vec3
@@ -151,7 +151,7 @@ class MinerBot(BaseAgent):
             "type": "inventory.v1",
             "source": self.agent_id,
             "target": "BuilderBot",
-            "timestamp": datetime.utcnow().isoformat() + 'Z',
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "payload": {
                 "collected_materials": self.inventory,
                 "total_volume": total_volume

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from agents.base_agent import BaseAgent, AgentState
 from mcpi.vec3 import Vec3
@@ -142,7 +142,7 @@ class ExplorerBot(BaseAgent):
             "type": "map.v1",
             "source": self.agent_id,
             "target": "BuilderBot",
-            "timestamp": datetime.utcnow().isoformat() + 'Z',
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "payload": {
                 "exploration_area": map_payload.get("exploration_area"),
                 "elevation_map": [map_payload['optimal_zone']['y_avg']], 

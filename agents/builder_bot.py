@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from agents.base_agent import BaseAgent, AgentState
 from mcpi import block # Necesario para la construcción
@@ -126,7 +126,7 @@ class BuilderBot(BaseAgent):
             "type": "materials.requirements.v1",
             "source": self.agent_id,
             "target": "MinerBot",
-            "timestamp": datetime.utcnow().isoformat() + 'Z',
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "payload": self.required_bom,
             "status": "PENDING",
             "context": {"plan_name": self.current_plan["description"]}
