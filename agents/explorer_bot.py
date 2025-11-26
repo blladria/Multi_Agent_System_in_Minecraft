@@ -145,7 +145,7 @@ class ExplorerBot(BaseAgent):
             "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "payload": {
                 "exploration_area": map_payload.get("exploration_area"),
-                "elevation_map": [map_payload['optimal_zone']['y_avg']], 
+                "elevation_map": [map_payload['optimal_zone']['center']['y_avg']], 
                 "optimal_zone": map_payload.get("optimal_zone"),
             },
             "status": "SUCCESS" if map_payload.get('is_flat') else "PENDING",
