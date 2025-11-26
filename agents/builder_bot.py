@@ -219,6 +219,20 @@ class BuilderBot(BaseAgent):
         elif msg_type == "inventory.v1":
             # Actualiza el inventario local con los datos del MinerBot
             self.current_inventory = payload.get("collected_materials", {})
+            self.logger.info("Inventario actualizado.")
+
+            # **CORRECCIÓN CRÍTICA DE SINCRONIZACIÓN:** # Si el MinerBot envió el mensaje de FINALIZACIÓN (SUCCESS) y estamos 
+            # esperando materiales, forzamos la reevaluación y la transición a RUNNING 
+            # inmediatamente para evitar un fallo de timing en la prueba.
+            if self.state == AgentState.WAITING and message.get("status") == "SUCCESS":
+                 if self._check_materials_sufficient():
+                    self.logger.info("Materiales suficientes. Forzando transición a RUNNING para empezar construcción.")
+                    self.is_building = True
+                    self.state = AgentState.RUNNING
+            
+        elif msg_type == "inventory.v1":
+            # Actualiza el inventario local con los datos del MinerBot
+            self.current_inventory = payload.get("collected_materials", {})
             # El estado WAITING será reevaluado en el siguiente ciclo DECIDE
             self.logger.info("Inventario actualizado.")
 
