@@ -2,7 +2,7 @@
 import pytest
 import asyncio
 from unittest.mock import MagicMock
-from datetime import datetime, timezone # Se añade timezone
+from datetime import datetime, timezone 
 from agents.base_agent import AgentState
 from core.message_broker import MessageBroker
 from agents.explorer_bot import ExplorerBot
@@ -10,7 +10,7 @@ from agents.builder_bot import BuilderBot
 from agents.miner_bot import MinerBot
 from mcpi.vec3 import Vec3
 
-# --- FIXTURES y MOCKS ---
+# --- FIXTURES y MOCKS (Omitido para brevedad, mantener el codigo actual) ---
 
 @pytest.fixture
 def mock_mc():
@@ -40,40 +40,40 @@ def setup_synchronization_agents(mock_mc):
     
     return broker, explorer, builder, miner
 
+
 # --- PRUEBAS DE SINCRONIZACIÓN Y LOCKING ---
 
 @pytest.mark.asyncio
 async def test_miner_lock_release_on_stop(setup_synchronization_agents):
     """
     Verifica que MinerBot libera su lock de sector al recibir el comando 'stop' 
-    y entra en estado STOPPED (Resuelve el fallo de transición).
+    y entra en estado STOPPED (Soluciona el fallo de RUNNING -> STOPPED).
     """
     broker, _, _, miner = setup_synchronization_agents
     agent_tasks = {}
 
     try:
-        # 1. Lanzar ciclos asíncronos de los agentes
+        # 1. Lanzar ciclos asíncronos de los agentes (Miner inicia en IDLE)
         agent_tasks['miner'] = asyncio.create_task(miner.run_cycle())
         
-        # Dar tiempo para que el agente inicie y entre en RUNNING/Decide
-        await asyncio.sleep(0.1) # Más tiempo para la inicialización
+        # Dar tiempo para que el agente inicie
+        await asyncio.sleep(0.1) 
         
-        # Poner requisitos para que MinerBot adquiera el lock simulado
+        # Poner requisitos para que MinerBot pueda minar, y forzar la transición a RUNNING
         miner.requirements = {"stone": 100}
         miner.state = AgentState.RUNNING
 
-        # Dar tiempo para que el Miner ejecute decide() y adquiera el lock
-        await asyncio.sleep(0.2) # Más tiempo para el procesamiento del ciclo
+        # Dar tiempo para que el Miner ejecute DECIDE/ACT (Adquirir el lock y empezar a minar)
+        await asyncio.sleep(0.3) 
         
         # Verificación 1.1: El lock debe estar adquirido
         assert miner.mining_sector_locked is True
         
-        # 2. Acción: Enviar comando de STOP (esto llama a handle_stop)
+        # 2. Acción: Enviar comando de STOP 
         stop_command = {
             "type": "command.control.v1",
             "source": "Manager",
             "target": "MinerBot",
-            # Corrección de DeprecationWarning
             "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "payload": {"command_name": "stop"},
             "status": "PENDING",
@@ -81,7 +81,7 @@ async def test_miner_lock_release_on_stop(setup_synchronization_agents):
         await broker.publish(stop_command)
         
         # Dar tiempo para que el agente procese el mensaje y haga la transición
-        await asyncio.sleep(0.5) # Tiempo suficiente para la transición a STOPPED
+        await asyncio.sleep(0.5) 
         
         # 3. Verificación Final
         assert miner.state == AgentState.STOPPED
@@ -89,7 +89,7 @@ async def test_miner_lock_release_on_stop(setup_synchronization_agents):
         assert miner.mining_sector_locked is False
 
     finally:
-        # Limpieza: Cancelar todas las tareas al finalizar la prueba
+        # Limpieza
         for task in agent_tasks.values():
             task.cancel()
         await asyncio.gather(*agent_tasks.values(), return_exceptions=True)
@@ -99,19 +99,19 @@ async def test_miner_lock_release_on_stop(setup_synchronization_agents):
 async def test_builder_waits_for_materials(setup_synchronization_agents):
     """
     Verifica que BuilderBot entra en estado WAITING si recibe un comando 'build'
-    pero no tiene los materiales necesarios (Resuelve el fallo de transición).
+    pero no tiene los materiales necesarios (Soluciona el fallo de IDLE -> WAITING).
     """
     broker, _, builder, _ = setup_synchronization_agents
     agent_tasks = {}
 
     try:
-        # 1. Lanzar ciclos asíncronos
+        # 1. Lanzar ciclos asíncronos (Builder inicia en IDLE)
         agent_tasks['builder'] = asyncio.create_task(builder.run_cycle())
         await asyncio.sleep(0.1)
 
         # 2. Preparación: Definir requisitos y un inventario insuficiente
         builder.required_bom = {"WOOD_PLANKS": 50, "STONE": 10}
-        builder.current_inventory = {"WOOD_PLANKS": 5} # Insuficiente para construir
+        builder.current_inventory = {"WOOD_PLANKS": 5} # Insuficiente
         
         # 3. Acción: Simular el comando /builder build
         build_command = {
@@ -125,15 +125,15 @@ async def test_builder_waits_for_materials(setup_synchronization_agents):
         await broker.publish(build_command)
         
         # Dar tiempo para que el BuilderBot procese el mensaje
-        await asyncio.sleep(0.2) # Tiempo suficiente para la transición
+        await asyncio.sleep(0.2) 
         
         # 4. Verificación Final
-        # BuilderBot debe verificar el inventario en _handle_message y pasar a WAITING
+        # BuilderBot debe recibir el comando y transicionar de IDLE a WAITING
         assert builder.state == AgentState.WAITING 
         assert builder.is_building is False
 
     finally:
-        # Limpieza: Cancelar todas las tareas al finalizar la prueba
+        # Limpieza
         for task in agent_tasks.values():
             task.cancel()
         await asyncio.gather(*agent_tasks.values(), return_exceptions=True)

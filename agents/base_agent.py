@@ -11,7 +11,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 class AgentState(Enum):
     """
     Estados unificados de la Máquina de Estados Finita (FSM) para todos los agentes.
-    
     """
     IDLE = auto()      # Esperando un comando 
     RUNNING = auto()   # Ejecutando activamente su tarea 
@@ -89,11 +88,11 @@ class BaseAgent(ABC):
         """
         pass
     
-    # --- Bucle de Ejecución Concurrente ---
+    # --- Bucle de Ejecución Concurrente (CORRECCIÓN CRÍTICA) ---
 
     async def run_cycle(self):
         """Bucle principal de ejecución del agente. Usa asyncio para concurrencia."""
-        self.state = AgentState.IDLE  # <--- CORRECCIÓN: Iniciar en IDLE
+        self.state = AgentState.IDLE  # <--- INICIA EN IDLE (Estado controlable)
         self.logger.info("Ciclo de ejecución iniciado.")
 
         # Este bucle simula la operación continua del agente
@@ -101,7 +100,7 @@ class BaseAgent(ABC):
             await self.is_running.wait() # Bloquea aquí si el agente está PAUSED
             
             try:
-                # El ciclo sólo se ejecuta si el estado es RUNNING o WAITING
+                # El ciclo sólo se ejecuta si el estado NO es IDLE
                 if self.state != AgentState.IDLE: 
                     await self.perceive()
                     await self.decide()
