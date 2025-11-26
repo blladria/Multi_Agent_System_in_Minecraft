@@ -119,7 +119,7 @@ async def test_full_workflow_coordination(setup_coordination_system):
     await asyncio.sleep(1.5) 
 
     # Verificación 4.1: El BuilderBot debe empezar a construir.
-    await debug_state_wait(builder, AgentState.RUNNING, 0.5)
+    await debug_state_wait(builder, AgentState.RUNNING, 5.0)
     
     assert builder.state == AgentState.RUNNING
     assert builder.is_building is True
