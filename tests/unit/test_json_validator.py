@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 from core.json_validator import validate_message, ValidationError
 from core.json_validator import MESSAGE_SCHEMAS, AGENT_IDENTIFIERS
 
 # Generar un timestamp válido para las pruebas
-VALID_TIMESTAMP = datetime.utcnow().isoformat() + 'Z'
+VALID_TIMESTAMP = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 # --- Mensajes Base Válidos (para construir variaciones) ---
 
