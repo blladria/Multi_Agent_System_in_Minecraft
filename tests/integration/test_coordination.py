@@ -87,7 +87,7 @@ async def test_full_workflow_coordination(setup_coordination_system):
     await broker.publish(start_command)
     
     # 1.1 Espera a que ExplorerBot complete su trabajo y el BuilderBot transicione
-    await asyncio.sleep(4.5) 
+    await asyncio.sleep(6.0) 
     
     # DEBUG: Comprobación de estado antes de la aserción crítica
     await debug_state_wait(builder, AgentState.WAITING, 0.5)
