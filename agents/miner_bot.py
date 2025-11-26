@@ -129,7 +129,7 @@ class MinerBot(BaseAgent):
             elif command == 'resume': self.handle_resume()
             elif command == 'stop': self.handle_stop()
         elif msg_type == "materials.requirements.v1":
-            self.requirements = payload.get("payload", {})
+            self.requirements = payload
             self.logger.info(f"Requisitos de materiales recibidos: {self.requirements}")
             if self.state == AgentState.IDLE: self.state = AgentState.RUNNING
 
