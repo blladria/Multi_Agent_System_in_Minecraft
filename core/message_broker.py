@@ -3,7 +3,7 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import Dict, Any, Awaitable
-from core.json_validator import validate_message, ValidationError
+from core.json_validator import validate_message
 from jsonschema import ValidationError as JsonSchemaValidationError
 
 # Configuración del logger para el Broker
@@ -68,7 +68,7 @@ class MessageBroker:
                 await self._agent_queues[target_id].put(message)
                 
                 # Logging persistente de mensaje enviado [cite: 52, 161]
-                logger.info(f"📤 PUBLICADO {message_type} de {source_id} a {target_id}. Contexto: {message.get('context', {})}")
+                logger.info(f"PUBLICADO {message_type} de {source_id} a {target_id}. Contexto: {message.get('context', {})}")
                 
             except Exception as e:
                 logger.error(f"Error al encolar mensaje para {target_id}: {e}")
