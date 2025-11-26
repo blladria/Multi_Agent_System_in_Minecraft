@@ -102,9 +102,8 @@ class BaseAgent(ABC):
             try:
                 # El ciclo sólo se ejecuta si el estado NO es IDLE
                 await self.perceive()
-                
+
                 if self.state != AgentState.IDLE: 
-                    await self.perceive()
                     await self.decide()
                     await self.act()
                     
