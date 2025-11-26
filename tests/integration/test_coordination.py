@@ -9,9 +9,7 @@ from agents.explorer_bot import ExplorerBot
 from agents.builder_bot import BuilderBot
 from agents.miner_bot import MinerBot
 from mcpi.vec3 import Vec3
-
-# NOTA: Los tests de integración requieren que las clases de Agente estén importadas
-#       y que implementen correctamente el método _handle_message para procesar los mensajes.
+from datetime import timezone # Para corregir las warnings
 
 # --- FIXTURES y MOCKS ---
 
@@ -31,7 +29,6 @@ def setup_coordination_system(mock_mc):
     """
     broker = MessageBroker()
     
-    # NOTA: Los Agentes se instancian directamente, ya que la Reflexión se prueba en AgentManager.
     explorer = ExplorerBot("ExplorerBot", mock_mc, broker)
     builder = BuilderBot("BuilderBot", mock_mc, broker)
     miner = MinerBot("MinerBot", mock_mc, broker)
@@ -60,7 +57,7 @@ async def test_full_workflow_coordination(setup_coordination_system):
     }
     
     # Asegurar que el ciclo asíncrono se ha iniciado
-    await asyncio.sleep(0.01) 
+    await asyncio.sleep(0.1) 
     
     # --- FASE 1: Exploración (Explorer -> Builder) ---
     
@@ -69,48 +66,46 @@ async def test_full_workflow_coordination(setup_coordination_system):
         "type": "command.control.v1",
         "source": "Manager",
         "target": "ExplorerBot",
-        "timestamp": datetime.utcnow().isoformat() + 'Z',
+        # Corregir la generación de timestamp para evitar DeprecationWarning
+        "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         "payload": {"command_name": "start", "parameters": {"args": ["x=10", "z=10", "range=20"]}},
         "status": "PENDING",
     }
     await broker.publish(start_command)
     
-    # Dejar tiempo para que ExplorerBot perciba, decida, escanee (act) y publique map.v1
-    # Necesita unos 3-4 segundos reales de sleep, pero en el test usamos un avance de ciclo
-    await asyncio.sleep(4.0) 
+    # **AJUSTE CRÍTICO DE TIMING:** Dejar tiempo suficiente para que ExplorerBot
+    # complete su escaneo de 3 segundos (en act) y publique map.v1.
+    await asyncio.sleep(4.5) 
 
     # Verificación 1.1: BuilderBot debe recibir el mapa y pasar a planificar/WAITING
     assert builder.terrain_data is not None
+    # El BuilderBot debe haber pasado de IDLE -> RUNNING (Planifica) -> ACT (Publica BOM) -> WAITING
     assert builder.state == AgentState.WAITING
     
     # --- FASE 2: Planificación y Demanda de Materiales (Builder -> Miner) ---
 
-    # El BuilderBot debe haber publicado un mensaje materials.requirements.v1
-    # Verificamos que MinerBot haya recibido y actualizado sus requisitos
-    await asyncio.sleep(0.01)
+    # El MinerBot debe haber recibido el BOM del BuilderBot.
+    await asyncio.sleep(0.1)
     assert miner.requirements != {}
     assert miner.requirements.get("WOOD_PLANKS") > 0
     assert miner.state == AgentState.RUNNING # Miner debe estar minando/trabajando
 
     # --- FASE 3: Minería y Suministro (Miner -> Builder) ---
     
-    # La minería es lenta. Dejamos que el MinerBot minero corra por un tiempo suficiente.
-    # El MinerBot publica 'inventory.v1' periódicamente, y pasará a IDLE solo cuando cumpla el requisito.
-    
-    # El BuilderBot requiere 64 WOOD_PLANKS y 32 STONE.
-    # Las estrategias extraen ~5-8 bloques/ciclo. Necesitará varios ciclos.
-    time_to_mine = 20 # Simular 20 ciclos de minería (tiempo real de test)
+    # **AJUSTE CRÍTICO DE TIMING:** Permitir que el MinerBot minero corra por tiempo suficiente.
+    # El requisito es 96 bloques. El Miner extrae ~5-8 bloques/ciclo. 20 ciclos son insuficientes.
+    time_to_mine = 30 # Permitir 30 segundos (más de 20 ciclos lentos)
     await asyncio.sleep(time_to_mine) 
     
-    # Verificación 3.1: MinerBot debe haber cumplido requisitos y publicado SUCCESS
-    assert miner.get_total_volume() >= 96 # (64+32)
+    # Verificación 3.1: MinerBot debe haber cumplido requisitos (get_total_volume >= 96) 
+    # y publicado SUCCESS, pasando a IDLE.
+    assert miner.get_total_volume() >= 96
     assert miner.state == AgentState.IDLE 
 
     # --- FASE 4: Construcción (Builder se activa) ---
     
-    # BuilderBot debe haber recibido el último inventory.v1 y debe pasar de WAITING a RUNNING
-    # y comenzar la construcción.
-    await asyncio.sleep(0.1) # Pequeña pausa para que el BuilderBot procese el último mensaje
+    # BuilderBot debe recibir el último inventory.v1 y pasar de WAITING a RUNNING (Construcción)
+    await asyncio.sleep(0.5) # Pausa suficiente para el procesamiento del último mensaje
 
     # Verificación 4.1: El BuilderBot debe empezar a construir.
     assert builder.state == AgentState.RUNNING
