@@ -1,0 +1,2 @@
+# Multi_Agent_System_in_Minecraft
+The objective is to develop an intelligent and cooperative ecosystem where agents autonomously perform exploration, mining, and construction tasks while maintaining real-time coordination, synchronization, and communication.
