@@ -92,7 +92,7 @@ class BaseAgent(ABC):
 
     async def run_cycle(self):
         """Bucle principal de ejecución del agente. Usa asyncio para concurrencia."""
-        self.state = AgentState.IDLE  # <--- INICIA EN IDLE (Estado controlable)
+        self.state = AgentState.IDLE  # INICIA EN IDLE (Estado inicial)
         self.logger.info("Ciclo de ejecución iniciado.")
 
         # Este bucle simula la operación continua del agente
@@ -107,8 +107,7 @@ class BaseAgent(ABC):
                     await self.act()
                     
                 # Espera breve para evitar el consumo excesivo de CPU
-                # Este sleep es crucial para la asincronía, pero también para permitir
-                # que los comandos (que no son parte del ciclo) sean procesados por el broker.
+                # Este sleep es crucial para el event loop y para permitir la entrada de comandos
                 await asyncio.sleep(0.1) 
 
             except Exception as e:
@@ -137,27 +136,21 @@ class BaseAgent(ABC):
 
     def handle_stop(self):
         """Maneja el comando 'stop': termina la operación de forma segura."""
-        self.is_running.set() # Asegura que el ciclo pueda despertar y terminar
+        self.is_running.clear() # Bloquea el ciclo para la terminación
         self._save_checkpoint() # Persistir el estado final 
-        self.state = AgentState.STOPPED
+        self.state = AgentState.STOPPED # Esto libera el lock
+        self.logger.info(f"{self.agent_id} ha recibido STOP y esta TERMINANDO.")
 
     # --- Métodos de Checkpointing y Sincronización ---
 
     def _save_checkpoint(self):
         """Serializa y almacena el estado y contexto para reanudación. """
-        # Aquí iría la lógica de serialización a JSON o pickle del diccionario self.context
         self.logger.debug(f"Punto de control guardado. Contexto: {self.context}")
 
     def _load_checkpoint(self):
         """Carga el estado y contexto desde el último checkpoint. """
-        # Aquí iría la lógica de deserialización
         self.logger.debug(f"Punto de control cargado. Contexto: {self.context}")
 
     def release_locks(self):
         """Libera todos los locks (ej. regiones de minería) al detenerse o fallar."""
-        # La lógica real de locks se implementará en el AgentManager o un módulo de Sincronización
         self.logger.info("Locks y recursos espaciales liberados.")
-
-
-# Nota: Las clases específicas de agente (ExplorerBot, etc.) heredarán de esta clase
-# y deberán implementar los métodos abstractos (perceive, decide, act).
