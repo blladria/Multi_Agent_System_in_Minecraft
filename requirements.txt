@@ -1,3 +1,4 @@
 mcpi
 jsonschema 
 pytest
+pytest-asyncio

@@ -8,7 +8,6 @@ from mcpi import block # Necesario para la construcción
 from mcpi.vec3 import Vec3
 
 # Diccionario de plantillas de construcción simuladas
-# Requisito: Debe construir al menos dos plantillas distintas.
 BUILDING_TEMPLATES = {
     "shelter_basic": {
         "materials": {"WOOD_PLANKS": 64, "STONE": 32, "GLASS": 4},
@@ -83,6 +82,8 @@ class BuilderBot(BaseAgent):
                 # Acción 1: Calcular y Publicar BOM
                 self.required_bom = self._calculate_bom(self.current_plan)
                 await self._publish_materials_requirements()
+                
+                # TRANSICIÓN CRÍTICA DE FLUJO: Pasar a WAITING para esperar al MinerBot
                 self.is_planning = False
                 self.state = AgentState.WAITING
                 
@@ -102,8 +103,6 @@ class BuilderBot(BaseAgent):
 
     def _calculate_bom(self, plan: Dict[str, Any]) -> Dict[str, int]:
         """Calcula la Lista de Materiales para el plan actual."""
-        # En una implementación real, esto escalaría los materiales por el tamaño del edificio.
-        # Aquí, simplemente devuelve los materiales de la plantilla.
         self.logger.info(f"Calculando BOM para '{plan['description']}'.")
         return plan["materials"]
 
@@ -139,13 +138,10 @@ class BuilderBot(BaseAgent):
     async def _execute_build_step(self):
         """Coloca una capa de bloques en Minecraft."""
         if not self.construction_position:
-            # Si no hay posición, usa la posición promedio del último mapa.
             zone = self.terrain_data.get('optimal_zone', {}).get('center', {})
             x, y, z = zone.get('x', 0), zone.get('y_avg', 0), zone.get('z', 0)
-            # La posición Y debe ser un entero y ligeramente superior al terreno
             self.construction_position = Vec3(int(x), int(y) + 1, int(z)) 
         
-        # Mueve la posición inicial de construcción a la capa actual
         current_y = int(self.construction_position.y) + self.build_step
         size_x, size_y, size_z = self.current_plan["size"]
         
@@ -161,7 +157,7 @@ class BuilderBot(BaseAgent):
         self.logger.info(f"Construyendo capa {self.build_step + 1}/{size_y} en Y={current_y}.")
         self.build_step += 1
 
-    # --- Manejo de Mensajes (Usa if/elif/else) ---
+    # --- Manejo de Mensajes (Corregido para STOP y WAITING) ---
     
     async def _handle_message(self, message: Dict[str, Any]):
         """Procesa los mensajes de control y de datos recibidos."""
@@ -174,11 +170,35 @@ class BuilderBot(BaseAgent):
                 self._parse_plan_command(payload.get("parameters", {}))
                 
             elif command == 'build':
+                # Verifica si puede empezar a construir O si debe esperar
                 if self._check_materials_sufficient():
-                     self.state = AgentState.RUNNING
+                     self.state = AgentState.RUNNING # Puede iniciar la construcción
                 else:
-                     self.state = AgentState.WAITING
+                     self.state = AgentState.WAITING # No puede iniciar, debe esperar los materiales
                      self.logger.warning("No se puede iniciar la construccion: Materiales insuficientes.")
             
             elif command == 'pause': self.handle_pause()
             elif command == 'resume': self.handle_resume()
+            elif command == 'stop': self.handle_stop() # <--- CORRECCIÓN PARA STOP
+        
+        elif msg_type == "map.v1":
+            self.terrain_data = payload
+            # ExplorerBot publica map.v1 -> BuilderBot debe pasar a IDLE para forzar la planificación
+            self.state = AgentState.IDLE
+            self.logger.info("Datos de mapa recibidos. Listo para planificar.")
+
+        elif msg_type == "inventory.v1":
+            # Actualiza el inventario local con los datos del MinerBot
+            self.current_inventory = payload.get("collected_materials", {})
+            # El estado WAITING será reevaluado en el siguiente ciclo DECIDE
+            self.logger.info("Inventario actualizado.")
+
+    def _parse_plan_command(self, params: Dict[str, Any]):
+        """Parsea el comando '/builder plan set <template>'."""
+        args = params.get('args', [])
+        if len(args) >= 2 and args[0] == 'set' and args[1] in BUILDING_TEMPLATES:
+            self.current_plan = BUILDING_TEMPLATES[args[1]]
+            self.logger.info(f"Plan de construccion cambiado a: {self.current_plan['description']}")
+            self.terrain_data = {} 
+        else:
+            self.mc.postToChat("ERROR: /builder plan set <template> invalido.")
