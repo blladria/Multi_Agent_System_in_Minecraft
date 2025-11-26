@@ -17,7 +17,8 @@ MATERIAL_MAP = {
     "wood": 17,
     "stone": 1,
     "cobblestone": 4,
-    "diamond_ore": 56
+    "diamond_ore": 56,
+    "glass": 20
 }
 
 class MinerBot(BaseAgent):
