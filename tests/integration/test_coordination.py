@@ -115,9 +115,6 @@ async def test_full_workflow_coordination(setup_coordination_system):
 
     # --- FASE 4: Construcción (Builder se activa) ---
     
-    # BuilderBot debe recibir el último inventory.v1 y pasar de WAITING a RUNNING (Construcción)
-    await asyncio.sleep(1.5) 
-
     # Verificación 4.1: El BuilderBot debe empezar a construir.
     await debug_state_wait(builder, AgentState.RUNNING, 5.0)
     
