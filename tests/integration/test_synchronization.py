@@ -56,14 +56,14 @@ async def test_miner_lock_release_on_stop(setup_synchronization_agents):
         agent_tasks['miner'] = asyncio.create_task(miner.run_cycle())
         
         # Dar tiempo para que el agente inicie
-        await asyncio.sleep(0.3) 
+        await asyncio.sleep(0.3) # Tiempo incrementado para inicialización
         
         # Poner requisitos y forzar la transición a RUNNING
         miner.requirements = {"stone": 100}
         miner.state = AgentState.RUNNING
 
         # Dar tiempo para que el Miner ejecute decide() y adquiera el lock
-        await asyncio.sleep(0.5) 
+        await asyncio.sleep(0.5) # Tiempo suficiente para adquirir el lock
         
         # Verificación 1.1: El lock debe estar adquirido
         assert miner.mining_sector_locked is True
