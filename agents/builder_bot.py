@@ -178,7 +178,7 @@ class BuilderBot(BaseAgent):
             
             elif command == 'pause': self.handle_pause()
             elif command == 'resume': self.handle_resume()
-            elif command == 'stop': self.handle_stop() # <--- CORRECCIÓN PARA STOP
+            elif command == 'stop': self.handle_stop() 
         
         elif msg_type == "map.v1":
             self.terrain_data = payload

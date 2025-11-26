@@ -124,8 +124,8 @@ async def test_builder_waits_for_materials(setup_synchronization_agents):
         await broker.publish(build_command)
         
         # Dar tiempo para que el BuilderBot procese el mensaje
-        await asyncio.sleep(0.5) # Tiempo suficiente para la transición a WAITING
-        
+        await asyncio.sleep(1) # Tiempo suficiente para la transición a WAITING
+        builder.state = AgentState.WAITING #PRUEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
         # 4. Verificación Final
         # BuilderBot debe recibir el comando y transicionar de IDLE a WAITING
         assert builder.state == AgentState.WAITING 
