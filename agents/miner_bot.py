@@ -85,8 +85,13 @@ class MinerBot(BaseAgent):
     async def decide(self):
         if self.state == AgentState.RUNNING:
             if self._check_requirements_fulfilled():
-                self.logger.info("Decidiendo: Requisitos completados. Publicando inventario final.")
-                self.state = AgentState.IDLE 
+                self.logger.info("Decidiendo: Requisitos completados. Ejecutando acciones finales y transición a IDLE.")
+                
+                # **CORRECCIÓN CRÍTICA DE ASINCRONÍA:** Ejecutar acciones finales inmediatamente
+                # para que el BuilderBot reciba el mensaje SUCCESS sin demora de ciclo.
+                await self._complete_mining_cycle() 
+                
+                self.state = AgentState.IDLE # Transiciona a IDLE después de la acción de éxito.
             elif not self.mining_sector_locked:
                 self.logger.info("Decidiendo: Adquiriendo lock de sector de mineria.")
                 self.mining_sector_locked = True
@@ -102,16 +107,25 @@ class MinerBot(BaseAgent):
             )
             await self._publish_inventory_update(status="PENDING")
             
-        elif self.state == AgentState.IDLE and self._check_requirements_fulfilled():
-            await self._publish_inventory_update(status="SUCCESS")
-            self.release_locks()
-            self.state = AgentState.IDLE
+        # El bloque 'elif self.state == AgentState.IDLE...' ha sido eliminado, 
+        # ya que la finalización se ejecuta de forma asíncrona e inmediata en decide().
+        # No es necesario añadir un 'pass'.
 
     # --- Control y Sincronización (Omitido para brevedad) ---
     def release_locks(self):
         if self.mining_sector_locked:
             self.mining_sector_locked = False
             self.logger.info("Lock de sector de minería liberado.")
+
+
+
+    async def _complete_mining_cycle(self):
+        """Acciones de finalización: publica el inventario final y libera locks."""
+        # 1. Publicar el mensaje de éxito (la acción más crítica)
+        await self._publish_inventory_update(status="SUCCESS")
+        # 2. Liberar el lock de sector
+        self.release_locks()
+
 
     async def _handle_message(self, message: Dict[str, Any]):
         msg_type = message.get("type")
