@@ -65,12 +65,11 @@ class BuilderBot(BaseAgent):
                 # Si no es suficiente, permanece en WAITING.
                 return
 
-        if self.state == AgentState.IDLE and self.terrain_data and not self.is_planning:
+        if self.state == AgentState.RUNNING and self.terrain_data and not self.is_planning:
             # Recibió mapa y necesita planificar el BOM
             self.logger.info("Decidiendo: Mapa recibido. Calculando BOM...")
             self.is_planning = True
-            self.state = AgentState.RUNNING
-
+            # El estado se mantiene en RUNNING para ejecutar el ACT
 
     async def act(self):
         """
@@ -157,7 +156,7 @@ class BuilderBot(BaseAgent):
         self.logger.info(f"Construyendo capa {self.build_step + 1}/{size_y} en Y={current_y}.")
         self.build_step += 1
 
-    # --- Manejo de Mensajes (Corregido para STOP y WAITING) ---
+    # --- Manejo de Mensajes (CORREGIDO) ---
     
     async def _handle_message(self, message: Dict[str, Any]):
         """Procesa los mensajes de control y de datos recibidos."""
@@ -183,13 +182,16 @@ class BuilderBot(BaseAgent):
         
         elif msg_type == "map.v1":
             self.terrain_data = payload
-            # CORRECCIÓN: Forzar a RUNNING para planificar en el siguiente ciclo ACT
-            self.is_planning = True 
-            self.state = AgentState.RUNNING
-            self.logger.info("Datos de mapa recibidos. Listo para planificar.")
+            # CORRECCIÓN: Transicionar a RUNNING al recibir el mapa
+            if self.state == AgentState.IDLE:
+                self.is_planning = True 
+                self.state = AgentState.RUNNING
+                self.logger.info("Datos de mapa recibidos. Iniciando planificación.")
 
         elif msg_type == "inventory.v1":
+            # Actualiza el inventario local con los datos del MinerBot
             self.current_inventory = payload.get("collected_materials", {})
+            # El estado WAITING será reevaluado en el siguiente ciclo DECIDE
             self.logger.info("Inventario actualizado.")
 
     def _parse_plan_command(self, params: Dict[str, Any]):

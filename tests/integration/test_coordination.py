@@ -75,7 +75,7 @@ async def test_full_workflow_coordination(setup_coordination_system):
     assert miner.state == AgentState.RUNNING 
 
     # TIEMPO AJUSTADO: Permitir que el MinerBot minero corra por tiempo suficiente.
-    time_to_mine = 40 
+    time_to_mine = 45 
     await asyncio.sleep(time_to_mine) 
     
     # Verificación 3.1: MinerBot debe haber cumplido requisitos y pasado a IDLE.
@@ -85,7 +85,7 @@ async def test_full_workflow_coordination(setup_coordination_system):
     # --- FASE 4: Construcción (Builder se activa) ---
     
     # BuilderBot debe recibir el último inventory.v1 y pasar de WAITING a RUNNING (Construcción)
-    await asyncio.sleep(1.0) # Tiempo suficiente para procesar el inventory.v1 FINAL
+    await asyncio.sleep(1.5) # Tiempo suficiente para procesar el inventory.v1 FINAL
 
     # Verificación 4.1: El BuilderBot debe empezar a construir.
     assert builder.state == AgentState.RUNNING

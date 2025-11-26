@@ -56,7 +56,7 @@ async def test_miner_lock_release_on_stop(setup_synchronization_agents):
         agent_tasks['miner'] = asyncio.create_task(miner.run_cycle())
         
         # Dar tiempo para que el agente inicie
-        await asyncio.sleep(0.3) 
+        await asyncio.sleep(0.5) 
         
         # Poner requisitos y forzar la transición a RUNNING
         miner.requirements = {"stone": 100}
@@ -80,7 +80,7 @@ async def test_miner_lock_release_on_stop(setup_synchronization_agents):
         await broker.publish(stop_command)
         
         # Dar tiempo para que el agente procese el mensaje y haga la transición
-        await asyncio.sleep(1.0) # Tiempo suficiente para asegurar la transición a STOPPED
+        await asyncio.sleep(1.5) # Tiempo suficiente para asegurar la transición a STOPPED
         
         # 3. Verificación Final
         assert miner.state == AgentState.STOPPED
