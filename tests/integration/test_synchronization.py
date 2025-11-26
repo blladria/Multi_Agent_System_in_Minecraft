@@ -56,7 +56,7 @@ async def test_miner_lock_release_on_stop(setup_synchronization_agents):
         agent_tasks['miner'] = asyncio.create_task(miner.run_cycle())
         
         # Dar tiempo para que el agente inicie
-        await asyncio.sleep(0.5) 
+        await asyncio.sleep(0.3) 
         
         # Poner requisitos y forzar la transición a RUNNING
         miner.requirements = {"stone": 100}
@@ -80,7 +80,7 @@ async def test_miner_lock_release_on_stop(setup_synchronization_agents):
         await broker.publish(stop_command)
         
         # Dar tiempo para que el agente procese el mensaje y haga la transición
-        await asyncio.sleep(1.5) # Tiempo suficiente para asegurar la transición a STOPPED
+        await asyncio.sleep(1.5) # TIEMPO MÁS SEGURO (1.5s) para asegurar la transición a STOPPED
         
         # 3. Verificación Final
         assert miner.state == AgentState.STOPPED
@@ -124,8 +124,8 @@ async def test_builder_waits_for_materials(setup_synchronization_agents):
         await broker.publish(build_command)
         
         # Dar tiempo para que el BuilderBot procese el mensaje
-        await asyncio.sleep(1) # Tiempo suficiente para la transición a WAITING
-        builder.state = AgentState.WAITING #PRUEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        await asyncio.sleep(0.5) # Tiempo suficiente para la transición a WAITING
+        
         # 4. Verificación Final
         # BuilderBot debe recibir el comando y transicionar de IDLE a WAITING
         assert builder.state == AgentState.WAITING 
