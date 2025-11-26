@@ -1,0 +1,18 @@
+# Archivos de Entorno Virtual (¡Muy Importante!)
+venv/
+.venv/
+env/
+.env/
+
+# Archivos de Python Compilados y Cache
+*.pyc
+__pycache__/
+
+# Logs generados por el sistema de Agentes (Requisito del Enunciado)
+logs/
+
+# Datos del Sistema de Cobertura (si usas pytest-cov)
+.coverage
+
+# Archivos de IDE (Opcional, pero recomendado para mantener limpio el repo)
+.vscode/
