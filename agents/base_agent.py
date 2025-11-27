@@ -14,17 +14,17 @@ class AgentState(Enum):
     """
     Estados unificados de la Máquina de Estados Finita (FSM) para todos los agentes.
     """
-    IDLE = auto()      # Esperando un comando
-    RUNNING = auto()   # Ejecutando activamente su tarea
-    PAUSED = auto()    # Temporalmente detenido, con el contexto preservado
-    WAITING = auto()   # Bloqueado, esperando datos o recursos
-    STOPPED = auto()   # Terminado de forma segura con estado y datos persistidos
-    ERROR = auto()     # Ocurrió un problema irrecuperable; el agente se detiene
+    IDLE = auto()      # Esperando un comando [cite: 107]
+    RUNNING = auto()   # Ejecutando activamente su tarea [cite: 108]
+    PAUSED = auto()    # Temporalmente detenido, con el contexto preservado [cite: 109]
+    WAITING = auto()   # Bloqueado, esperando datos o recursos [cite: 110]
+    STOPPED = auto()   # Terminado de forma segura con estado y datos persistidos [cite: 111]
+    ERROR = auto()     # Ocurrió un problema irrecuperable; el agente se detiene [cite: 112]
 
 class BaseAgent(ABC):
     """
     Clase base para todos los agentes (ExplorerBot, MinerBot, BuilderBot).
-    Implementa la FSM unificada y el ciclo Perceive-Decide-Act.
+    Implementa la FSM unificada y el ciclo Perceive-Decide-Act[cite: 30].
     """
     def __init__(self, agent_id: str, mc_connection, message_broker):
         self.agent_id = agent_id
@@ -156,7 +156,8 @@ class BaseAgent(ABC):
             await self.is_running.wait() # Bloquea aquí si el agente está PAUSED
             
             try:
-                # El ciclo sólo se ejecuta si el estado NO es IDLE
+                # CORRECCIÓN: La percepción debe ocurrir *siempre* para que el agente
+                # pueda recibir comandos y transicionar de IDLE/PAUSED/WAITING a RUNNING.
                 await self.perceive()
 
                 if self.state != AgentState.IDLE: 

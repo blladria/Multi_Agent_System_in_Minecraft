@@ -45,9 +45,6 @@ class BuilderBot(BaseAgent):
         self._set_marker_properties(block.WOOL.id, 14)
 
     async def perceive(self):
-        """
-        Escucha mensajes (map.v1, inventory.v1, comandos) y actualiza su estado.
-        """
         if self.broker.has_messages(self.agent_id):
             message = await self.broker.consume_queue(self.agent_id)
             await self._handle_message(message)
@@ -245,7 +242,7 @@ class BuilderBot(BaseAgent):
             self.current_inventory = payload.get("collected_materials", {})
             self.logger.info("Inventario actualizado.")
 
-            # **CORRECCIÓN CRÍTICA DE SINCRONIZACIÓN:** Si el MinerBot envió el mensaje de FINALIZACIÓN (SUCCESS) y estamos 
+            # **LÓGICA DE SINCRONIZACIÓN:** Si el MinerBot envió el mensaje de FINALIZACIÓN (SUCCESS) y estamos 
             # esperando materiales, forzamos la reevaluación y la transición a RUNNING 
             if self.state == AgentState.WAITING and message.get("status") == "SUCCESS":
                  if self._check_materials_sufficient():
@@ -253,11 +250,8 @@ class BuilderBot(BaseAgent):
                     self.is_building = True
                     self.state = AgentState.RUNNING
             
-        elif msg_type == "inventory.v1":
-            # Actualiza el inventario local con los datos del MinerBot
-            self.current_inventory = payload.get("collected_materials", {})
-            # El estado WAITING será reevaluado en el siguiente ciclo DECIDE
-            self.logger.info("Inventario actualizado.")
+            # NOTA: Se ha eliminado el bloque 'elif msg_type == "inventory.v1":' duplicado/redundante
+            # que estaba presente aquí.
 
     def _parse_plan_command(self, params: Dict[str, Any]):
         """Parsea el comando '/builder plan set <template>'."""
