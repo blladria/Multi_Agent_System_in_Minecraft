@@ -67,7 +67,6 @@ def setup_system_logging(log_file_name: str = 'system.log'):
     logging.getLogger("LoggingSetup").info(f"Configuracion de logging inicializada. Archivo: {log_file_name}")
 
 # --- CLASE DE AYUDA PARA LA REFLEXIÓN ---
-# ... (El resto de AgentDiscovery, AgentManager y sus métodos siguen igual)
 
 class AgentDiscovery:
     """Clase estática para el descubrimiento reflexivo de agentes."""
@@ -197,12 +196,23 @@ class AgentManager:
         """Convierte comandos de chat en mensajes de control JSON usando if/elif/else."""
         
         raw_message = raw_message.strip()
-        if not raw_message.startswith('/'):
-            return # Ignora mensajes que no son comandos
-
-        # Lógica de parseo simple (ej: /agent status -> ['agent', 'status'])
-        parts = raw_message.lstrip('/').split()
+        
+        # --- MODIFICACIÓN CLAVE PARA PERMITIR COMANDOS SIN '/' ---
+        # El servidor de MC absorbe el '/', por lo que se recomienda escribir el comando sin él.
+        # Quitamos el '/' si está presente para manejar comandos con o sin él (aunque es mejor sin).
+        command_string = raw_message.lstrip('/')
+            
+        if not command_string:
+            return # Ignora mensajes vacíos o solo '/'
+            
+        # Lógica de parseo simple (ej: 'agent status' -> ['agent', 'status'])
+        parts = command_string.split()
+        
+        if not parts:
+            return # Comando no válido después de limpiar
+            
         command_root = parts[0] # Ej: 'agent' o 'miner'
+        # -------------------------------------------------------------
 
         # 1. Comando general del Manager (ej: /agent status)
         if command_root == 'agent' and len(parts) > 1:
@@ -214,7 +224,8 @@ class AgentManager:
                 # Implementación pendiente de stop general
                 self.mc.postToChat("Manager: Comando 'stop' en desarrollo.")
             elif subcommand == 'help':
-                self.mc.postToChat("Manager: Comandos disponibles: /agent status, /<AgentName> <comando>")
+                # Se actualiza el mensaje de ayuda para el nuevo formato sin '/'
+                self.mc.postToChat("Manager: Comandos disponibles: agent status, <AgentName> <comando>") 
             
         # 2. Comando dirigido a un Agente específico (ej: /miner start)
         elif command_root.capitalize() + 'Bot' in self.agents:
@@ -243,7 +254,8 @@ class AgentManager:
             
         # 3. Comando no reconocido
         else:
-            self.mc.postToChat(f"Comando '{raw_message}' no reconocido. Use /agent help.")
+            # Se actualiza el mensaje de error para el nuevo formato sin '/'
+            self.mc.postToChat(f"Comando '{raw_message}' no reconocido. Use agent help.")
             
     def _get_system_status(self):
         """Recopila el estado de todos los agentes."""
