@@ -40,6 +40,7 @@ class ExplorerBot(BaseAgent):
             self.logger.info(f"Act: Explorando area alrededor de ({self.target_position.x}, {self.target_position.z})...")
             
             # --- VISUALIZACIÓN: Simular movimiento del agente ---
+            # Clona la posición de inicio para mover el marcador
             scan_pos = self.target_position.clone()
             
             # Mover el marcador al punto de inicio de la exploración
@@ -53,7 +54,7 @@ class ExplorerBot(BaseAgent):
                 
                 # Intentar actualizar la altura del marcador a la altura actual del terreno
                 try:
-                    scan_pos.y = self.mc.getHeight(scan_pos.x, scan_pos.z)
+                    scan_pos.y = self.mc.getHeight(int(scan_pos.x), int(scan_pos.z)) 
                 except Exception:
                     pass 
                     

@@ -14,12 +14,12 @@ class AgentState(Enum):
     """
     Estados unificados de la Máquina de Estados Finita (FSM) para todos los agentes.
     """
-    IDLE = auto()      # Esperando un comando 
-    RUNNING = auto()   # Ejecutando activamente su tarea 
-    PAUSED = auto()    # Temporalmente detenido, con el contexto preservado 
-    WAITING = auto()   # Bloqueado, esperando datos o recursos 
+    IDLE = auto()      # Esperando un comando
+    RUNNING = auto()   # Ejecutando activamente su tarea
+    PAUSED = auto()    # Temporalmente detenido, con el contexto preservado
+    WAITING = auto()   # Bloqueado, esperando datos o recursos
     STOPPED = auto()   # Terminado de forma segura con estado y datos persistidos
-    ERROR = auto()     # Ocurrió un problema irrecuperable; el agente se detiene 
+    ERROR = auto()     # Ocurrió un problema irrecuperable; el agente se detiene
 
 class BaseAgent(ABC):
     """
@@ -61,7 +61,7 @@ class BaseAgent(ABC):
         """Transición de estado atómica y logueada."""
         prev_state = self._state
         
-        # Lógica de liberación de locks (Requerimiento de Sincronización) 
+        # Lógica de liberación de locks (Requerimiento de Sincronización)
         if new_state in (AgentState.STOPPED, AgentState.ERROR):
             self.release_locks()
             self._clear_marker() # Nuevo: Borrar marcador al detenerse/fallar
@@ -69,10 +69,10 @@ class BaseAgent(ABC):
         # Transición
         self._state = new_state
         
-        # Logging estructurado del cambio de estado 
+        # Logging estructurado del cambio de estado
         self.logger.info(f"TRANSITION: {prev_state.name} -> {new_state.name}")
         
-        # Notificar a dependientes (se implementaría en el MessageBroker/Observer Pattern) 
+        # Notificar a dependientes (se implementaría en el MessageBroker/Observer Pattern)
         # self.broker.notify_dependents(self.agent_id, new_state)
 
     # --- Métodos de Visualización (NUEVO) ---
@@ -82,7 +82,10 @@ class BaseAgent(ABC):
         self.marker_block_data = data
         
     def _update_marker(self, new_pos: Vec3):
-        """Mueve y actualiza el bloque marcador del agente."""
+        """
+        Mueve y actualiza el bloque marcador del agente. 
+        Se coloca 1 bloque encima de la posición base para mayor visibilidad.
+        """
         # 1. Borrar el marcador antiguo
         try:
             old_x, old_y, old_z = int(self.marker_position.x), int(self.marker_position.y) + 1, int(self.marker_position.z)
@@ -97,6 +100,7 @@ class BaseAgent(ABC):
         self.marker_position.z = new_pos.z
         
         # 3. Colocar el nuevo marcador (1 bloque encima de la base)
+        # Se convierte a int y se sube 1 bloque
         new_x, new_y, new_z = int(new_pos.x), int(new_pos.y) + 1, int(new_pos.z)
         try:
             self.mc.setBlock(new_x, new_y, new_z, self.marker_block_id, self.marker_block_data)
@@ -106,6 +110,7 @@ class BaseAgent(ABC):
     def _clear_marker(self):
         """Borra el bloque marcador de su posición actual."""
         try:
+            # Borra el bloque en la posición (Y + 1)
             x, y, z = int(self.marker_position.x), int(self.marker_position.y) + 1, int(self.marker_position.z)
             self.mc.setBlock(x, y, z, block.AIR.id)
         except Exception:
@@ -134,7 +139,7 @@ class BaseAgent(ABC):
     @abstractmethod
     async def act(self):
         """
-        Ejecuta la acción decidida (ej: enviar un mensaje, mover el jugador, colocar un bloque). 
+        Ejecuta la acción decidida (ej: enviar un mensaje, mover el jugador, colocar un bloque).
         """
         pass
     
@@ -172,10 +177,10 @@ class BaseAgent(ABC):
     # --- Control de Ciclo de Vida (Manejo de Comandos) ---
 
     def handle_pause(self):
-        """Maneja el comando 'pause': detiene temporalmente la ejecución. """
+        """Maneja el comando 'pause': detiene temporalmente la ejecución."""
         if self.state == AgentState.RUNNING:
             self.is_running.clear()
-            self._save_checkpoint() # Preservar el contexto 
+            self._save_checkpoint() # Preservar el contexto
             self.state = AgentState.PAUSED
 
     def handle_resume(self):
@@ -188,18 +193,18 @@ class BaseAgent(ABC):
     def handle_stop(self):
         """Maneja el comando 'stop': termina la operación de forma segura."""
         self.is_running.clear() # Bloquea el ciclo para la terminación
-        self._save_checkpoint() # Persistir el estado final 
+        self._save_checkpoint() # Persistir el estado final
         self.state = AgentState.STOPPED # Esto libera el lock
         self.logger.info(f"{self.agent_id} ha recibido STOP y esta TERMINANDO.")
 
     # --- Métodos de Checkpointing y Sincronización ---
 
     def _save_checkpoint(self):
-        """Serializa y almacena el estado y contexto para reanudación. """
+        """Serializa y almacena el estado y contexto para reanudación."""
         self.logger.debug(f"Punto de control guardado. Contexto: {self.context}")
 
     def _load_checkpoint(self):
-        """Carga el estado y contexto desde el último checkpoint. """
+        """Carga el estado y contexto desde el último checkpoint."""
         self.logger.debug(f"Punto de control cargado. Contexto: {self.context}")
 
     def release_locks(self):

@@ -7,7 +7,7 @@ from agents.base_agent import BaseAgent, AgentState
 from mcpi.vec3 import Vec3
 from mcpi import block # Necesario para definir el marcador
 
-# Importar las clases de estrategia (se asume que ya están creadas)
+# Importar las clases de estrategia (Patrón Estrategia)
 from strategies.base_strategy import BaseMiningStrategy
 from strategies.vertical_search import VerticalSearchStrategy
 from strategies.grid_search import GridSearchStrategy
@@ -15,11 +15,11 @@ from strategies.vein_search import VeinSearchStrategy
 
 # Diccionario de materiales para simulación (material: ID de bloque MC)
 MATERIAL_MAP = {
-    "wood": 17,
-    "stone": 1,
-    "cobblestone": 4,
-    "diamond_ore": 56,
-    "glass": 20
+    "wood": block.WOOD.id, # Tronco de árbol
+    "stone": block.STONE.id, # Bloque de piedra
+    "cobblestone": block.COBBLESTONE.id, # Bloque de piedra labrada
+    "diamond_ore": block.DIAMOND_ORE.id,
+    "glass": block.GLASS.id
 }
 
 class MinerBot(BaseAgent):
@@ -35,6 +35,7 @@ class MinerBot(BaseAgent):
         self.mining_position: Vec3 = Vec3(0, 60, 0)
         self.mining_sector_locked = False 
         
+        # Registro de estrategias
         self.strategy_classes: Dict[str, Type[BaseMiningStrategy]] = { 
             "vertical": VerticalSearchStrategy,
             "grid": GridSearchStrategy,
@@ -77,10 +78,11 @@ class MinerBot(BaseAgent):
                     inventory[material] += qty_to_mine
                     blocks_extracted += qty_to_mine
                     self.logger.debug(f"Extraidos {qty_to_mine} de {material}. Total: {inventory[material]}")
+        # Si sobra volumen de "minado" se asigna a piedra (material de relleno)
         if volume > blocks_extracted:
             inventory["stone"] += (volume - blocks_extracted)
 
-    # --- Ciclo Perceive-Decide-Act (ACT Omitido para brevedad) ---
+    # --- Ciclo Perceive-Decide-Act ---
     async def perceive(self):
         if self.broker.has_messages(self.agent_id):
             message = await self.broker.consume_queue(self.agent_id)
@@ -91,11 +93,9 @@ class MinerBot(BaseAgent):
             if self._check_requirements_fulfilled():
                 self.logger.info("Decidiendo: Requisitos completados. Ejecutando acciones finales y transición a IDLE.")
                 
-                # **CORRECCIÓN CRÍTICA DE ASINCRONÍA:** Ejecutar acciones finales inmediatamente
-                # para que el BuilderBot reciba el mensaje SUCCESS sin demora de ciclo.
                 await self._complete_mining_cycle() 
                 
-                self.state = AgentState.IDLE # Transiciona a IDLE después de la acción de éxito.
+                self.state = AgentState.IDLE 
             elif not self.mining_sector_locked:
                 self.logger.info("Decidiendo: Adquiriendo lock de sector de mineria.")
                 self.mining_sector_locked = True
@@ -105,8 +105,10 @@ class MinerBot(BaseAgent):
         if self.state == AgentState.RUNNING and self.mining_sector_locked:
             
             # VISUALIZACIÓN: Mover el marcador a la posición de minería actual (antes de excavar)
+            # La estrategia modificará la posición Vec3, el próximo ciclo lo reflejará.
             self._update_marker(self.mining_position) 
             
+            # Ejecuta la estrategia de minería (Patrón Strategy)
             await self.current_strategy_instance.execute(
                 requirements=self.requirements,
                 inventory=self.inventory,
@@ -115,24 +117,17 @@ class MinerBot(BaseAgent):
             )
             await self._publish_inventory_update(status="PENDING")
             
-        # El bloque 'elif self.state == AgentState.IDLE...' ha sido eliminado, 
-        # ya que la finalización se ejecuta de forma asíncrona e inmediata en decide().
-        # No es necesario añadir un 'pass'.
-
-    # --- Control y Sincronización (Omitido para brevedad) ---
+    # --- Control y Sincronización ---
     def release_locks(self):
         if self.mining_sector_locked:
             self.mining_sector_locked = False
             self.logger.info("Lock de sector de minería liberado.")
-            # La limpieza del marcador se hace en BaseAgent.state.setter
             
-
-
     async def _complete_mining_cycle(self):
         """Acciones de finalización: publica el inventario final y libera locks."""
-        # 1. Publicar el mensaje de éxito (la acción más crítica)
+        # 1. Publicar el mensaje de éxito 
         await self._publish_inventory_update(status="SUCCESS")
-        # 2. Liberar el lock de sector (se hace en BaseAgent.state.setter)
+        # 2. Liberar el lock de sector 
         self.release_locks()
 
 

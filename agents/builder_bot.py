@@ -10,12 +10,14 @@ from mcpi.vec3 import Vec3
 # Diccionario de plantillas de construcción simuladas
 BUILDING_TEMPLATES = {
     "shelter_basic": {
-        "materials": {"wood": 64, "stone": 32, "glass": 4},
+        # MATERIALES BÁSICOS SIN CRAFTEO (Wood, Stone, Dirt)
+        "materials": {"wood": 64, "stone": 32, "dirt": 16}, 
         "size": (5, 3, 5), # (x, y, z)
         "description": "Un refugio simple de 5x3x5"
     },
     "tower_watch": {
-        "materials": {"stone": 128, "wood": 16, "ladder": 8},
+        # MATERIALES BÁSICOS SIN CRAFTEO (Stone, Wood)
+        "materials": {"stone": 128, "wood": 16, "cobblestone": 8},
         "size": (3, 10, 3),
         "description": "Una torre de vigilancia de 3x10x3"
     }
@@ -98,6 +100,8 @@ class BuilderBot(BaseAgent):
                 if self.construction_position:
                     # El marcador se posiciona en la base + la altura de la capa actual
                     current_y_pos = self.construction_position.clone()
+                    # La capa se acaba de construir (build_step ya se ha incrementado),
+                    # por lo que el marcador debe estar en la capa más alta que se acaba de crear 
                     current_y_pos.y += self.build_step - 1 
                     self._update_marker(current_y_pos)
                 
@@ -112,7 +116,7 @@ class BuilderBot(BaseAgent):
                 await asyncio.sleep(0.5)
         
         elif self.state in (AgentState.IDLE, AgentState.WAITING):
-            self._clear_marker() # Limpiar el marcador si no está activo
+            self._clear_marker() # Limpiar el marcador si no está activo (es una preferencia visual)
 
     # --- Lógica de Comunicación y Planificación ---
 
@@ -174,12 +178,16 @@ class BuilderBot(BaseAgent):
             primary_material_key = max(self.required_bom, key=self.required_bom.get)
             material_key_lower = primary_material_key.lower()
 
-            # 2. Mapear el nombre a la constante de bloque
+            # 2. Mapear el nombre a la constante de bloque (Ajustado para materiales básicos)
             material_name_uc = material_key_lower.upper() 
+            # Aseguramos que los nombres básicos correspondan a las constantes
             if material_name_uc == 'WOOD':
-                material_name_uc = 'WOOD_PLANKS'
-                
+                material_name_uc = 'WOOD' 
+            elif material_name_uc == 'DIRT':
+                material_name_uc = 'DIRT'
+            
             # 3. Obtener el ID del bloque (Reflexión/getattr implícito)
+            # Utilizamos getattr para obtener el ID del bloque dinámicamente
             mat_id = getattr(block, material_name_uc, block.STONE).id
 
         # 4. Coloca la capa de bloques (dibuja el perímetro de la estructura)
@@ -222,7 +230,7 @@ class BuilderBot(BaseAgent):
             
             elif command == 'pause': self.handle_pause()
             elif command == 'resume': self.handle_resume()
-            elif command == 'stop': self.handle_stop() 
+            elif command == 'stop': self.handle_stop()
         
         elif msg_type == "map.v1":
             self.terrain_data = payload
@@ -237,9 +245,8 @@ class BuilderBot(BaseAgent):
             self.current_inventory = payload.get("collected_materials", {})
             self.logger.info("Inventario actualizado.")
 
-            # **CORRECCIÓN CRÍTICA DE SINCRONIZACIÓN:** # Si el MinerBot envió el mensaje de FINALIZACIÓN (SUCCESS) y estamos 
+            # **CORRECCIÓN CRÍTICA DE SINCRONIZACIÓN:** Si el MinerBot envió el mensaje de FINALIZACIÓN (SUCCESS) y estamos 
             # esperando materiales, forzamos la reevaluación y la transición a RUNNING 
-            # inmediatamente para evitar un fallo de timing en la prueba.
             if self.state == AgentState.WAITING and message.get("status") == "SUCCESS":
                  if self._check_materials_sufficient():
                     self.logger.info("Materiales suficientes. Forzando transición a RUNNING para empezar construcción.")
