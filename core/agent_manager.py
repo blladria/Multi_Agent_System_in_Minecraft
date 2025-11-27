@@ -2,18 +2,62 @@
 import asyncio
 import logging
 import inspect
-import pkgutil
+import sys
+import os
+import logging.handlers # Nueva importación
 from datetime import datetime
+import pkgutil # Nueva importación
 from mcpi.minecraft import Minecraft
 from core.message_broker import MessageBroker
 from agents.base_agent import BaseAgent, AgentState 
 
-# Configuración del logger
+# Configuración del logger para el Manager
 logger = logging.getLogger("AgentManager")
-logger.setLevel(logging.INFO)
+
+# --- Función de Configuración de Logging (Exportada para Tests) ---
+def setup_system_logging(log_file_name: str = 'system.log'):
+    """
+    Configura el sistema de logging con handlers para archivo y consola.
+    Permite especificar un nombre de archivo para logs separados (e.g., para tests).
+    """
+    
+    # 1. Asegúrate de que el directorio 'logs' exista
+    LOG_DIR = 'logs'
+    if not os.path.exists(LOG_DIR):
+        os.makedirs(LOG_DIR)
+
+    # Evita re-añadir handlers si ya están configurados 
+    root_logger = logging.getLogger()
+    if root_logger.hasHandlers():
+        return
+
+    # 2. Formato de Logging Estructurado
+    LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    formatter = logging.Formatter(LOG_FORMAT)
+
+    # 3. Handler para Archivo (Persistencia)
+    file_handler = logging.handlers.RotatingFileHandler(
+        os.path.join(LOG_DIR, log_file_name),
+        maxBytes=10 * 1024 * 1024, # 10 MB
+        backupCount=5,
+        encoding='utf-8'
+    )
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.DEBUG)
+
+    # 4. Handler para Consola
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    console_handler.setLevel(logging.INFO)
+
+    # 5. Configuración del Logger Raíz
+    root_logger.setLevel(logging.DEBUG) 
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+    
+    logging.getLogger("LoggingSetup").info(f"Configuracion de logging inicializada. Archivo: {log_file_name}")
 
 # --- CLASE DE AYUDA PARA LA REFLEXIÓN ---
-
 class AgentDiscovery:
     """Clase estática para el descubrimiento reflexivo de agentes."""
     
@@ -53,6 +97,7 @@ class AgentDiscovery:
             
         return discovered_agents
 
+
 # --- CLASE PRINCIPAL: AGENT MANAGER ---
 
 class AgentManager:
@@ -60,11 +105,16 @@ class AgentManager:
     Orquesta el sistema, gestiona el ciclo de vida de los agentes y procesa comandos de chat.
     """
     def __init__(self, broker: MessageBroker):
+        # LLAMADA CRÍTICA: Configuración para el archivo de log principal
+        setup_system_logging(log_file_name='system.log') 
+        
         self.broker = broker
-        self.mc = None
+        # Nota: La conexión a MC ahora usa el método initialize_minecraft para logging
+        self.mc = None 
         self.agents: dict[str, BaseAgent] = {}
         self.agent_tasks: dict[str, asyncio.Task] = {}
         self.is_running = False
+        logger.info("Agent Manager inicializado.")
 
     def initialize_minecraft(self):
         """Conecta a Minecraft y envía un mensaje de estado."""

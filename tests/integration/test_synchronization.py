@@ -10,6 +10,9 @@ from agents.builder_bot import BuilderBot
 from agents.miner_bot import MinerBot
 from mcpi.vec3 import Vec3
 
+# Importamos la función de configuración de logging desde AgentManager
+from core.agent_manager import setup_system_logging
+
 # --- FIXTURES y MOCKS (Mantener el código actual) ---
 
 @pytest.fixture
@@ -26,6 +29,9 @@ def setup_synchronization_agents(mock_mc):
     Configura y devuelve el MessageBroker y las instancias de los tres agentes
     (sin iniciar sus ciclos asíncronos).
     """
+    # LLAMADA CRÍTICA: Configura el logging para que use un archivo de test
+    setup_system_logging(log_file_name='test_synchronization.log')
+    
     broker = MessageBroker()
     
     # Instanciación de agentes con mocks

@@ -12,6 +12,9 @@ from mcpi.vec3 import Vec3
 from datetime import timezone
 from typing import Tuple
 
+# Importamos la función de configuración de logging desde AgentManager
+from core.agent_manager import setup_system_logging 
+
 # --- FUNCIÓN DE UTILIDAD PARA SEGUIMIENTO ---
 
 async def debug_state_wait(agent, expected_state: AgentState, max_wait_seconds: float):
@@ -48,6 +51,9 @@ def mock_mc():
 
 @pytest.fixture
 def setup_coordination_system(mock_mc):
+    # LLAMADA CRÍTICA: Configura el logging para que use un archivo de test
+    setup_system_logging(log_file_name='test_coordination.log') 
+
     broker = MessageBroker()
     explorer = ExplorerBot("ExplorerBot", mock_mc, broker)
     builder = BuilderBot("BuilderBot", mock_mc, broker)
