@@ -11,6 +11,7 @@ from agents.miner_bot import MinerBot
 from mcpi.vec3 import Vec3
 from datetime import timezone
 from typing import Tuple
+import logging # AÑADIDO: Importar el módulo logging
 
 # Importamos la función de configuración de logging desde AgentManager
 from core.agent_manager import setup_system_logging 
@@ -52,7 +53,7 @@ def mock_mc():
 @pytest.fixture
 def setup_coordination_system(mock_mc):
     # LLAMADA CRÍTICA: Configura el logging para que use un archivo de test
-    setup_system_logging(log_file_name='test_coordination.log') 
+    setup_system_logging(log_file_name='logsTests.log') 
 
     broker = MessageBroker()
     explorer = ExplorerBot("ExplorerBot", mock_mc, broker)
@@ -61,7 +62,15 @@ def setup_coordination_system(mock_mc):
     broker.subscribe("ExplorerBot")
     broker.subscribe("BuilderBot")
     broker.subscribe("MinerBot")
-    return broker, explorer, builder, miner
+    
+    # FIX: Usar yield para que sea un generator fixture
+    yield broker, explorer, builder, miner
+
+    # Teardown: Forzar la escritura de los logs del buffer al finalizar el test
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.handlers.RotatingFileHandler):
+            handler.flush()
 
 # --- PRUEBA PRINCIPAL ---
 

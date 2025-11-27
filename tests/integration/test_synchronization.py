@@ -9,6 +9,7 @@ from agents.explorer_bot import ExplorerBot
 from agents.builder_bot import BuilderBot
 from agents.miner_bot import MinerBot
 from mcpi.vec3 import Vec3
+import logging # AÑADIDO: Importar el módulo logging
 
 # Importamos la función de configuración de logging desde AgentManager
 from core.agent_manager import setup_system_logging
@@ -30,7 +31,7 @@ def setup_synchronization_agents(mock_mc):
     (sin iniciar sus ciclos asíncronos).
     """
     # LLAMADA CRÍTICA: Configura el logging para que use un archivo de test
-    setup_system_logging(log_file_name='test_synchronization.log')
+    setup_system_logging(log_file_name='logsTests.log')
     
     broker = MessageBroker()
     
@@ -44,7 +45,14 @@ def setup_synchronization_agents(mock_mc):
     broker.subscribe("BuilderBot")
     broker.subscribe("MinerBot")
     
-    return broker, explorer, builder, miner
+    # FIX: Usar yield para que sea un generator fixture
+    yield broker, explorer, builder, miner
+
+    # Teardown: Forzar la escritura de los logs del buffer al finalizar el test
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.handlers.RotatingFileHandler):
+            handler.flush()
 
 # --- PRUEBAS DE SINCRONIZACIÓN Y LOCKING ---
 

@@ -26,11 +26,19 @@ def setup_system_logging(log_file_name: str = 'system.log'):
     if not os.path.exists(LOG_DIR):
         os.makedirs(LOG_DIR)
 
-    # Evita re-añadir handlers si ya están configurados 
-    # Esto es crucial para que los tests no dupliquen la salida
     root_logger = logging.getLogger()
-    if root_logger.hasHandlers():
-        return
+    
+    # --- FIX: GESTIÓN DE HANDLERS PARA TESTS (Limpiar handlers antiguos) ---
+    handlers_to_remove = []
+    for h in root_logger.handlers:
+        # Cierra y elimina handlers de archivo y de consola para forzar la reconfiguración
+        if isinstance(h, (logging.handlers.RotatingFileHandler, logging.FileHandler, logging.StreamHandler)):
+            h.close() 
+            handlers_to_remove.append(h)
+    
+    for h in handlers_to_remove:
+        root_logger.removeHandler(h)
+    # --- FIN FIX ---
 
     # 2. Formato de Logging Estructurado
     LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -46,7 +54,7 @@ def setup_system_logging(log_file_name: str = 'system.log'):
     file_handler.setFormatter(formatter)
     file_handler.setLevel(logging.DEBUG)
 
-    # 4. Handler para Consola
+    # 4. Handler para Consola (Necesario para el output)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     console_handler.setLevel(logging.INFO)
@@ -59,6 +67,7 @@ def setup_system_logging(log_file_name: str = 'system.log'):
     logging.getLogger("LoggingSetup").info(f"Configuracion de logging inicializada. Archivo: {log_file_name}")
 
 # --- CLASE DE AYUDA PARA LA REFLEXIÓN ---
+# ... (El resto de AgentDiscovery, AgentManager y sus métodos siguen igual)
 
 class AgentDiscovery:
     """Clase estática para el descubrimiento reflexivo de agentes."""
