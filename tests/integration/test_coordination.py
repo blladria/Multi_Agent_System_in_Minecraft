@@ -105,8 +105,7 @@ async def test_full_workflow_coordination(setup_coordination_system):
     await asyncio.sleep(6.0) 
     
     # DEBUG: Comprobación de estado antes de la aserción crítica
-    # Aumentado a 1.0s para capturar la transición del Builder
-    await debug_state_wait(builder, AgentState.WAITING, 1.0) 
+    await debug_state_wait(builder, AgentState.WAITING, 1.0)
 
     # Verificación 1.1: BuilderBot debe recibir el mapa y pasar a WAITING.
     assert builder.terrain_data is not None
@@ -120,15 +119,16 @@ async def test_full_workflow_coordination(setup_coordination_system):
     assert miner.state == AgentState.RUNNING 
 
     # Permitir que el MinerBot minero corra por tiempo suficiente para cumplir requisitos.
-    # FIX: Aumentado de 40 a 45s para asegurar la finalización del ciclo de minería.
+    # El tiempo se ajustó a 45s en el fix anterior (suficiente para 120 bloques)
     time_to_mine = 45 
     await asyncio.sleep(time_to_mine) 
     
     # Verificación 3.1: MinerBot debe haber cumplido requisitos y pasado a IDLE.
-    # Aumentado el tiempo de espera del debug a 1.0s para capturar la transición.
-    await debug_state_wait(miner, AgentState.IDLE, 1.0) 
+    await debug_state_wait(miner, AgentState.IDLE, 1.0)
     
-    assert miner.get_total_volume() >= 96 
+    # FIX CRÍTICO: El BOM de 'house_basic' (plan por defecto) es 120. 
+    # La aserción anterior (96) era incorrecta.
+    assert miner.get_total_volume() >= 120 
     assert miner.state == AgentState.IDLE 
 
     # --- FASE 4: Construcción (Builder se activa) ---
