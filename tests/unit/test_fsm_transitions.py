@@ -3,6 +3,9 @@ import pytest
 from unittest.mock import MagicMock
 from agents.base_agent import BaseAgent, AgentState, asyncio
 
+# NUEVA IMPORTACIÓN PARA LOGGING EN TESTS UNITARIOS
+from core.agent_manager import setup_system_logging 
+
 # --- MOCK: Clase Agente Mínima para Pruebas ---
 # Creamos una clase concreta que hereda de BaseAgent para poder instanciarla.
 
@@ -27,6 +30,10 @@ class MockAgent(BaseAgent):
 @pytest.fixture
 def base_agent_instance():
     """Fixture que crea una instancia de MockAgent con dependencias simuladas."""
+    
+    # LLAMADA CRÍTICA: Configura el logging para tests unitarios
+    setup_system_logging(log_file_name='logsTests.log')
+
     mc_mock = MagicMock()        # Simula la conexión a Minecraft
     broker_mock = MagicMock()    # Simula el MessageBroker
     

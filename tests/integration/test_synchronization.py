@@ -29,8 +29,8 @@ def setup_synchronization_agents(mock_mc):
     Configura y devuelve el MessageBroker y las instancias de los tres agentes
     (sin iniciar sus ciclos asíncronos).
     """
-    # LLAMADA CRÍTICA: Configura el logging para que use un archivo de test
-    setup_system_logging(log_file_name='test_synchronization.log')
+    # LLAMADA CRÍTICA: Configura el logging para que use un archivo de test único
+    setup_system_logging(log_file_name='logsTests.log')
     
     broker = MessageBroker()
     

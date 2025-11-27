@@ -4,9 +4,9 @@ import logging
 import inspect
 import sys
 import os
-import logging.handlers # Nueva importación
+import logging.handlers
 from datetime import datetime
-import pkgutil # Nueva importación
+import pkgutil
 from mcpi.minecraft import Minecraft
 from core.message_broker import MessageBroker
 from agents.base_agent import BaseAgent, AgentState 
@@ -27,6 +27,7 @@ def setup_system_logging(log_file_name: str = 'system.log'):
         os.makedirs(LOG_DIR)
 
     # Evita re-añadir handlers si ya están configurados 
+    # Esto es crucial para que los tests no dupliquen la salida
     root_logger = logging.getLogger()
     if root_logger.hasHandlers():
         return
@@ -58,6 +59,7 @@ def setup_system_logging(log_file_name: str = 'system.log'):
     logging.getLogger("LoggingSetup").info(f"Configuracion de logging inicializada. Archivo: {log_file_name}")
 
 # --- CLASE DE AYUDA PARA LA REFLEXIÓN ---
+
 class AgentDiscovery:
     """Clase estática para el descubrimiento reflexivo de agentes."""
     
