@@ -54,6 +54,7 @@ class ExplorerBot(BaseAgent):
                 
                 # Intentar actualizar la altura del marcador a la altura actual del terreno
                 try:
+                    # FIX: Asegura que solo se pasen enteros al mc.getHeight()
                     scan_pos.y = self.mc.getHeight(int(scan_pos.x), int(scan_pos.z)) 
                 except Exception:
                     pass 

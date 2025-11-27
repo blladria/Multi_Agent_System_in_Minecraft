@@ -88,6 +88,7 @@ class BaseAgent(ABC):
         """
         # 1. Borrar el marcador antiguo
         try:
+            # Asegura que las coordenadas sean enteras
             old_x, old_y, old_z = int(self.marker_position.x), int(self.marker_position.y) + 1, int(self.marker_position.z)
             self.mc.setBlock(old_x, old_y, old_z, block.AIR.id)
         except Exception:

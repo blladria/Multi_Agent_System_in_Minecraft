@@ -105,7 +105,7 @@ class MinerBot(BaseAgent):
         if self.state == AgentState.RUNNING and self.mining_sector_locked:
             
             # VISUALIZACIÓN: Mover el marcador a la posición de minería actual (antes de excavar)
-            # La estrategia modificará la posición Vec3, el próximo ciclo lo reflejará.
+            # La estrategia modifica la posición Vec3 in-place (ej. position.y -= 1)
             self._update_marker(self.mining_position) 
             
             # Ejecuta la estrategia de minería (Patrón Strategy)
