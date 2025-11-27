@@ -1,242 +1,136 @@
 # -*- coding: utf-8 -*-
+import pytest
 import asyncio
-import logging
-import inspect
-import sys
-import os
-import logging.handlers
+from unittest.mock import MagicMock
 from datetime import datetime
-import pkgutil
-from mcpi.minecraft import Minecraft
+from agents.base_agent import AgentState
 from core.message_broker import MessageBroker
-from agents.base_agent import BaseAgent, AgentState 
+from agents.explorer_bot import ExplorerBot
+from agents.builder_bot import BuilderBot
+from agents.miner_bot import MinerBot
+from mcpi.vec3 import Vec3
+from datetime import timezone
+from typing import Tuple
 
-# Configuración del logger para el Manager
-logger = logging.getLogger("AgentManager")
+# Importamos la función de configuración de logging desde AgentManager
+from core.agent_manager import setup_system_logging 
 
-# --- Función de Configuración de Logging (Exportada para Tests) ---
-def setup_system_logging(log_file_name: str = 'system.log'):
+# --- FUNCIÓN DE UTILIDAD PARA SEGUIMIENTO ---
+
+async def debug_state_wait(agent, expected_state: AgentState, max_wait_seconds: float):
     """
-    Configura el sistema de logging con handlers para archivo y consola.
-    Permite especificar un nombre de archivo para logs separados (e.g., para tests).
+    Espera hasta que el agente alcance un estado específico o se agote el tiempo.
+    Imprime el estado en cada ciclo para seguimiento.
     """
+    start_time = asyncio.get_event_loop().time()
     
-    # 1. Asegúrate de que el directorio 'logs' exista
-    LOG_DIR = 'logs'
-    if not os.path.exists(LOG_DIR):
-        os.makedirs(LOG_DIR)
-
-    # Evita re-añadir handlers si ya están configurados 
-    # Esto es crucial para que los tests no dupliquen la salida
-    root_logger = logging.getLogger()
-    if root_logger.hasHandlers():
-        return
-
-    # 2. Formato de Logging Estructurado
-    LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    formatter = logging.Formatter(LOG_FORMAT)
-
-    # 3. Handler para Archivo (Persistencia)
-    file_handler = logging.handlers.RotatingFileHandler(
-        os.path.join(LOG_DIR, log_file_name),
-        maxBytes=10 * 1024 * 1024, # 10 MB
-        backupCount=5,
-        encoding='utf-8'
-    )
-    file_handler.setFormatter(formatter)
-    file_handler.setLevel(logging.DEBUG)
-
-    # 4. Handler para Consola
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
-    console_handler.setLevel(logging.INFO)
-
-    # 5. Configuración del Logger Raíz
-    root_logger.setLevel(logging.DEBUG) 
-    root_logger.addHandler(file_handler)
-    root_logger.addHandler(console_handler)
+    # Imprime el estado inicial antes de la espera
+    print(f"\n[DEBUG] Esperando que {agent.agent_id} transicione a {expected_state.name}...")
     
-    logging.getLogger("LoggingSetup").info(f"Configuracion de logging inicializada. Archivo: {log_file_name}")
-
-# --- CLASE DE AYUDA PARA LA REFLEXIÓN ---
-
-class AgentDiscovery:
-    """Clase estática para el descubrimiento reflexivo de agentes."""
+    while agent.state != expected_state and (asyncio.get_event_loop().time() - start_time) < max_wait_seconds:
+        print(f"[DEBUG] {agent.agent_id} Estado actual: {agent.state.name}")
+        # Pequeña pausa para permitir que el event loop procese la cola de mensajes
+        await asyncio.sleep(0.1) 
     
-    @staticmethod
-    def discover_agents(package_name: str = 'agents') -> list[type[BaseAgent]]:
-        """
-        Escanea un paquete (directorio) dado y devuelve todas las clases que heredan de BaseAgent.
-        Esto implementa la Programación Reflexiva.
-        """
-        discovered_agents = []
-        try:
-            # Importa dinámicamente el paquete 'agents'
-            package = __import__(package_name)
-            
-            # Recorre todos los submódulos dentro del paquete
-            for _, name, is_pkg in pkgutil.walk_packages(package.__path__):
-                if not is_pkg:
-                    try:
-                        # Importa el módulo completo (e.g., agents.explorer_bot)
-                        module = __import__(f"{package_name}.{name}", fromlist=[name])
-                        
-                        # Inspecciona los miembros del módulo en busca de clases de agentes
-                        for item_name, item_obj in inspect.getmembers(module, inspect.isclass):
-                            # Verifica si hereda de BaseAgent pero no es la BaseAgent misma
-                            if (issubclass(item_obj, BaseAgent) and 
-                                item_obj is not BaseAgent and 
-                                item_obj.__module__.startswith(package_name)):
-                                
-                                discovered_agents.append(item_obj)
-                                logger.info(f"Descubierto agente: {item_name} de {name}")
-                                
-                    except ImportError as e:
-                        logger.error(f"Error al importar módulo {name}: {e}")
-
-        except Exception as e:
-            logger.error(f"Error fatal durante el descubrimiento de agentes: {e}")
-            
-        return discovered_agents
+    current_state = agent.state
+    if current_state != expected_state:
+        print(f"[DEBUG] ERROR: Tiempo agotado. {agent.agent_id} se quedo en {current_state.name}.")
+    else:
+        print(f"[DEBUG] ÉXITO: {agent.agent_id} alcanzó el estado {expected_state.name}.")
+        
+    return current_state
 
 
-# --- CLASE PRINCIPAL: AGENT MANAGER ---
+# --- FIXTURES y MOCKS (Mantener el código actual) ---
+@pytest.fixture
+def mock_mc():
+    mc = MagicMock()
+    mc.getHeight.return_value = 65 
+    mc.postToChat.return_value = None
+    return mc
 
-class AgentManager:
+@pytest.fixture
+def setup_coordination_system(mock_mc):
+    # LLAMADA CRÍTICA: Configura el logging para que use un archivo de test
+    setup_system_logging(log_file_name='test_coordination.log') 
+
+    broker = MessageBroker()
+    explorer = ExplorerBot("ExplorerBot", mock_mc, broker)
+    builder = BuilderBot("BuilderBot", mock_mc, broker)
+    miner = MinerBot("MinerBot", mock_mc, broker)
+    broker.subscribe("ExplorerBot")
+    broker.subscribe("BuilderBot")
+    broker.subscribe("MinerBot")
+    return broker, explorer, builder, miner
+
+# --- PRUEBA PRINCIPAL ---
+
+@pytest.mark.asyncio
+async def test_full_workflow_coordination(setup_coordination_system):
     """
-    Orquesta el sistema, gestiona el ciclo de vida de los agentes y procesa comandos de chat.
+    Prueba el ciclo completo de coordinación: Explorer -> Builder -> Miner -> Builder.
     """
-    def __init__(self, broker: MessageBroker):
-        # LLAMADA CRÍTICA: Configuración para el archivo de log principal
-        setup_system_logging(log_file_name='system.log') 
-        
-        self.broker = broker
-        # Nota: La conexión a MC ahora usa el método initialize_minecraft para logging
-        self.mc = None 
-        self.agents: dict[str, BaseAgent] = {}
-        self.agent_tasks: dict[str, asyncio.Task] = {}
-        self.is_running = False
-        logger.info("Agent Manager inicializado.")
+    broker, explorer, builder, miner = setup_coordination_system
+    
+    agent_tasks = {
+        'explorer': asyncio.create_task(explorer.run_cycle()),
+        'builder': asyncio.create_task(builder.run_cycle()),
+        'miner': asyncio.create_task(miner.run_cycle()),
+    }
+    
+    await asyncio.sleep(0.1) 
+    
+    # --- FASE 1: Exploración (Explorer -> Builder) ---
+    
+    start_command = {
+        "type": "command.control.v1",
+        "source": "Manager",
+        "target": "ExplorerBot",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+        "payload": {"command_name": "start", "parameters": {"args": ["x=10", "z=10", "range=20"]}},
+        "status": "PENDING",
+    }
+    await broker.publish(start_command)
+    
+    # 1.1 Espera a que ExplorerBot complete su trabajo y el BuilderBot transicione
+    await asyncio.sleep(6.0) 
+    
+    # DEBUG: Comprobación de estado antes de la aserción crítica
+    await debug_state_wait(builder, AgentState.WAITING, 0.5)
 
-    def initialize_minecraft(self):
-        """Conecta a Minecraft y envía un mensaje de estado."""
-        try:
-            # Intenta conectarse al servidor (debe estar iniciado en localhost:4711)
-            self.mc = Minecraft.create()
-            self.mc.postToChat("Manager: Conexion establecida. Iniciando agentes...")
-            logger.info("Conexion con Minecraft API exitosa.")
-            return True
-        except Exception as e:
-            logger.error(f"Fallo al conectar con Minecraft. Asegurese de que el servidor este activo. Error: {e}")
-            return False
-            
-    async def start_system(self):
-        """Descubre agentes y lanza sus ciclos de ejecución asíncrona."""
-        if not self.initialize_minecraft():
-            return
+    # Verificación 1.1: BuilderBot debe recibir el mapa y pasar a WAITING.
+    assert builder.terrain_data is not None
+    assert builder.state == AgentState.WAITING
+    
+    # --- FASE 2/3: Minería y Suministro (Miner -> Builder) ---
 
-        AgentClasses = AgentDiscovery.discover_agents()
-        if not AgentClasses:
-            logger.warning("No se encontraron clases de agentes para iniciar.")
-            return
+    # El MinerBot debe estar en RUNNING (minando)
+    await asyncio.sleep(0.5) 
+    assert miner.requirements != {}
+    assert miner.state == AgentState.RUNNING 
 
-        # Inicializa e suscribe cada agente
-        for AgentClass in AgentClasses:
-            agent_id = AgentClass.__name__
-            
-            # 1. Instancia el agente (asumiendo que su __init__ toma ID, mc y broker)
-            agent_instance = AgentClass(agent_id, self.mc, self.broker)
-            self.agents[agent_id] = agent_instance
-            
-            # 2. Suscribe la cola del agente al broker
-            self.broker.subscribe(agent_id)
-            
-            # 3. Lanza el ciclo de ejecución como una tarea asíncrona
-            task = asyncio.create_task(agent_instance.run_cycle(), name=agent_id)
-            self.agent_tasks[agent_id] = task
-            logger.info(f"Tarea '{agent_id}' lanzada de forma asincrona.")
+    # Permitir que el MinerBot minero corra por tiempo suficiente para cumplir requisitos.
+    time_to_mine = 40 
+    await asyncio.sleep(time_to_mine) 
+    
+    # Verificación 3.1: MinerBot debe haber cumplido requisitos y pasado a IDLE.
+    await debug_state_wait(miner, AgentState.IDLE, 0.5)
+    
+    assert miner.get_total_volume() >= 96 
+    assert miner.state == AgentState.IDLE 
 
-        self.is_running = True
-        logger.info("Sistema Multi-Agente completamente lanzado.")
-        
-        # Inicia el monitoreo de comandos de chat
-        await self._chat_command_monitor()
-        
-    async def _chat_command_monitor(self):
-        """Monitorea el chat de Minecraft para comandos de usuario."""
-        
-        # Limpia los eventos de chat previos
-        self.mc.events.clearAll()
-        logger.info("Monitoreo de comandos de chat iniciado.")
-        
-        while self.is_running:
-            try:
-                # pollChatPosts es una llamada que lee los comandos del chat
-                posts = self.mc.events.pollChatPosts()
-                
-                for post in posts:
-                    # Convierte el post (ej: '/agent status') a un mensaje JSON interno
-                    await self._process_chat_command(post.entityId, post.message)
-                    
-                await asyncio.sleep(0.5) # Pausa breve para ceder el control
-
-            except Exception as e:
-                logger.error(f"Error en el monitoreo de chat: {e}")
-                await asyncio.sleep(5)
-
-    async def _process_chat_command(self, entity_id, raw_message: str):
-        """Convierte comandos de chat en mensajes de control JSON usando if/elif/else."""
-        
-        raw_message = raw_message.strip()
-        if not raw_message.startswith('/'):
-            return # Ignora mensajes que no son comandos
-
-        # Lógica de parseo simple (ej: /agent status -> ['agent', 'status'])
-        parts = raw_message.lstrip('/').split()
-        command_root = parts[0] # Ej: 'agent' o 'miner'
-
-        # 1. Comando general del Manager (ej: /agent status)
-        if command_root == 'agent' and len(parts) > 1:
-            subcommand = parts[1].lower()
-            
-            if subcommand == 'status':
-                self.mc.postToChat(f"STATUS: {self._get_system_status()}")
-            elif subcommand == 'stop':
-                # Implementación pendiente de stop general
-                self.mc.postToChat("Manager: Comando 'stop' en desarrollo.")
-            elif subcommand == 'help':
-                self.mc.postToChat("Manager: Comandos disponibles: /agent status, /<AgentName> <comando>")
-            
-        # 2. Comando dirigido a un Agente específico (ej: /miner start)
-        elif command_root.capitalize() + 'Bot' in self.agents:
-            target_agent_id = command_root.capitalize() + 'Bot' # Reconverte a formato ID (MinerBot)
-            
-            # Verifica que haya un sub-comando
-            if len(parts) < 2:
-                self.mc.postToChat(f"{target_agent_id}: Falta el sub-comando (start, pause, etc.).")
-                return
-
-            # Crea un mensaje de control JSON (command.control.v1)
-            control_msg = {
-                "type": "command.control.v1",
-                "source": "Manager",
-                "target": target_agent_id,
-                "timestamp": datetime.utcnow().isoformat() + 'Z',
-                "payload": {
-                    "command_name": parts[1], # start, pause, resume, etc.
-                    # Los parámetros se pasan como un diccionario simple de ejemplo
-                    "parameters": {"args": parts[2:]}, 
-                },
-                "status": "PENDING",
-            }
-            # Envía el mensaje al agente a través del broker
-            await self.broker.publish(control_msg)
-            
-        # 3. Comando no reconocido
-        else:
-            self.mc.postToChat(f"Comando '{raw_message}' no reconocido. Use /agent help.")
-            
-    def _get_system_status(self):
-        """Recopila el estado de todos los agentes."""
-        status = ", ".join([f"{name}: {agent.state.name}" for name, agent in self.agents.items()])
-        return status or "Ningun agente activo."
+    # --- FASE 4: Construcción (Builder se activa) ---
+    
+    # Verificación 4.1: El BuilderBot debe empezar a construir y terminar.
+    # Se espera que regrese a IDLE tras completar todas las capas (el tiempo de espera es ahora para la finalización).
+    await debug_state_wait(builder, AgentState.IDLE, 5.0)
+     
+    assert builder.state == AgentState.IDLE
+    assert builder.is_building is False
+    
+    # Limpieza
+    for task in agent_tasks.values():
+        task.cancel()
+    await asyncio.gather(*agent_tasks.values(), return_exceptions=True)
+    
+    print("\n--- PRUEBA DE COORDINACION ASINCRONA EXITOSA ---")
