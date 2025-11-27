@@ -42,3 +42,4 @@ jobs:
       with:
         files: ./coverage.xml # Archivo generado por pytest-cov
         fail_ci_if_error: true
+        token: ${{ secrets.CODECOV_TOKEN }}
