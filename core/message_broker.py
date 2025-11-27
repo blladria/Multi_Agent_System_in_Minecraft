@@ -8,8 +8,7 @@ from jsonschema import ValidationError as JsonSchemaValidationError
 
 # Configuración del logger para el Broker
 logger = logging.getLogger("MessageBroker")
-logger.setLevel(logging.INFO)
-
+# Se eliminó logger.setLevel(logging.INFO) para usar la configuración central
 
 class MessageBroker:
     """
@@ -45,7 +44,7 @@ class MessageBroker:
         message_type = message.get("type", "unknown")
         source_id = message.get("source", "system")
         
-        # 1. Validación de mensajes (Requisito obligatorio) [cite: 95, 160]
+        # 1. Validación de mensajes (Requisito obligatorio)
         try:
             validate_message(message)
         except JsonSchemaValidationError as e:
@@ -56,7 +55,7 @@ class MessageBroker:
             logger.error(f"PUBLICACIÓN RECHAZADA: Error interno al validar mensaje: {e}")
             return
 
-        # 2. Encolamiento y Logging [cite: 161]
+        # 2. Encolamiento y Logging 
         
         # El campo 'timestamp' debe ser reciente o añadido si falta (aunque se valida arriba)
         if 'timestamp' not in message:
@@ -67,7 +66,7 @@ class MessageBroker:
                 # Pone el mensaje en la cola del agente sin bloquear 
                 await self._agent_queues[target_id].put(message)
                 
-                # Logging persistente de mensaje enviado [cite: 52, 161]
+                # Logging persistente de mensaje enviado 
                 logger.info(f"PUBLICADO {message_type} de {source_id} a {target_id}. Contexto: {message.get('context', {})}")
                 
             except Exception as e:
@@ -92,7 +91,7 @@ class MessageBroker:
         # Indica que el mensaje ha sido procesado por el consumidor
         self._agent_queues[agent_id].task_done()
         
-        # Logging de mensaje recibido [cite: 52, 161]
+        # Logging de mensaje recibido 
         logger.info(f"RECIBIDO {message.get('type')} por {agent_id}. Origen: {message.get('source')}")
         
         return message

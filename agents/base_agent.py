@@ -5,8 +5,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from enum import Enum, auto
 
-# Configuración básica del logging (se mejorará en main.py/core)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+# La configuración de logging se gestiona de forma centralizada en main.py
 
 class AgentState(Enum):
     """
