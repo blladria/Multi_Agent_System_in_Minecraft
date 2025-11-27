@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, Callable, Type
 from agents.base_agent import BaseAgent, AgentState
 from mcpi.vec3 import Vec3
+from mcpi import block # Necesario para definir el marcador
 
 # Importar las clases de estrategia (se asume que ya están creadas)
 from strategies.base_strategy import BaseMiningStrategy
@@ -44,6 +45,9 @@ class MinerBot(BaseAgent):
             self.mc, 
             self.logger
         )
+        
+        # VISUALIZACIÓN: Marcador Amarillo (Lana Amarilla = data 4)
+        self._set_marker_properties(block.WOOL.id, 4)
 
     # --- Lógica de Programación Funcional (Agregación) ---
     
@@ -99,6 +103,10 @@ class MinerBot(BaseAgent):
 
     async def act(self):
         if self.state == AgentState.RUNNING and self.mining_sector_locked:
+            
+            # VISUALIZACIÓN: Mover el marcador a la posición de minería actual (antes de excavar)
+            self._update_marker(self.mining_position) 
+            
             await self.current_strategy_instance.execute(
                 requirements=self.requirements,
                 inventory=self.inventory,
@@ -116,14 +124,15 @@ class MinerBot(BaseAgent):
         if self.mining_sector_locked:
             self.mining_sector_locked = False
             self.logger.info("Lock de sector de minería liberado.")
-
+            # La limpieza del marcador se hace en BaseAgent.state.setter
+            
 
 
     async def _complete_mining_cycle(self):
         """Acciones de finalización: publica el inventario final y libera locks."""
         # 1. Publicar el mensaje de éxito (la acción más crítica)
         await self._publish_inventory_update(status="SUCCESS")
-        # 2. Liberar el lock de sector
+        # 2. Liberar el lock de sector (se hace en BaseAgent.state.setter)
         self.release_locks()
 
 

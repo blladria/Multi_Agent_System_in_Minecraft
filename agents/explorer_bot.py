@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any
 from agents.base_agent import BaseAgent, AgentState
 from mcpi.vec3 import Vec3
-# from mcpi import block 
+from mcpi import block # Necesario para definir el marcador
 
 class ExplorerBot(BaseAgent):
     """
@@ -19,6 +19,9 @@ class ExplorerBot(BaseAgent):
         self.target_position: Vec3 = None
         self.exploration_range = 30  # Rango por defecto
         self.is_exploring = False
+        
+        # VISUALIZACIÓN: Marcador Azul (Lana Azul = data 11)
+        self._set_marker_properties(block.WOOL.id, 11)
 
     async def perceive(self):
         if self.broker.has_messages(self.agent_id):
@@ -36,7 +39,29 @@ class ExplorerBot(BaseAgent):
         if self.state == AgentState.RUNNING and self.is_exploring:
             self.logger.info(f"Act: Explorando area alrededor de ({self.target_position.x}, {self.target_position.z})...")
             
-            await asyncio.sleep(2) 
+            # --- VISUALIZACIÓN: Simular movimiento del agente ---
+            scan_pos = self.target_position.clone()
+            
+            # Mover el marcador al punto de inicio de la exploración
+            self._update_marker(scan_pos)
+
+            # Simular exploración paso a paso (moviendo el marcador)
+            for i in range(3):
+                 # Mover el marcador simulando el escaneo
+                scan_pos.x += 5
+                scan_pos.z -= 5 # Mover en diagonal
+                
+                # Intentar actualizar la altura del marcador a la altura actual del terreno
+                try:
+                    scan_pos.y = self.mc.getHeight(scan_pos.x, scan_pos.z)
+                except Exception:
+                    pass 
+                    
+                self._update_marker(scan_pos)
+                self.logger.debug(f"Movimiento Explorer a ({scan_pos.x}, {scan_pos.y}, {scan_pos.z})")
+                await asyncio.sleep(1.0) 
+            # --------------------------------------------------
+
             
             self.map_data = await self._scan_terrain()
             
@@ -45,6 +70,7 @@ class ExplorerBot(BaseAgent):
             self.is_exploring = False
             self.target_position = None
             self.state = AgentState.IDLE
+            self._clear_marker() # Limpiar el marcador al finalizar
 
     # --- Manejo de Mensajes y Comandos (Omitido para brevedad) ---
     async def _handle_message(self, message: Dict[str, Any]):
@@ -70,6 +96,7 @@ class ExplorerBot(BaseAgent):
                 if arg.startswith('range='):
                     self.exploration_range = int(arg.split('=')[1])
                     
+            # Obtiene la altura actual del terreno para establecer la posición inicial
             self.target_position = Vec3(x, self.mc.getHeight(x, z), z)
             self.logger.info(f"Parametros de exploracion cargados: Centro=({x}, {z}), Rango={self.exploration_range}")
             
@@ -131,6 +158,8 @@ class ExplorerBot(BaseAgent):
 
         return {
             "exploration_area": f"({start_x-half_range},{start_z-half_range}) a ({start_x+half_range},{start_z+half_range})",
+            # Se utiliza solo un valor de altura para el payload ya que map.v1 espera una lista de números
+            "elevation_map": [optimal_zone['center']['y_avg']], 
             "optimal_zone": optimal_zone,
             "is_flat": variance <= 5 
         }
@@ -145,7 +174,7 @@ class ExplorerBot(BaseAgent):
             "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "payload": {
                 "exploration_area": map_payload.get("exploration_area"),
-                "elevation_map": [map_payload['optimal_zone']['center']['y_avg']], 
+                "elevation_map": map_payload.get("elevation_map"), # Contiene el y_avg
                 "optimal_zone": map_payload.get("optimal_zone"),
             },
             "status": "SUCCESS" if map_payload.get('is_flat') else "PENDING",

@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, Any
 from agents.base_agent import BaseAgent, AgentState
-from mcpi import block # Necesario para la construcción
+from mcpi import block # Necesario para la construcción y el marcador
 from mcpi.vec3 import Vec3
 
 # Diccionario de plantillas de construcción simuladas
@@ -38,6 +38,9 @@ class BuilderBot(BaseAgent):
         self.build_step = 0
         self.is_planning = False
         self.is_building = False
+        
+        # VISUALIZACIÓN: Marcador Rojo (Lana Roja = data 14)
+        self._set_marker_properties(block.WOOL.id, 14)
 
     async def perceive(self):
         """
@@ -88,15 +91,28 @@ class BuilderBot(BaseAgent):
                 
             elif self.is_building:
                 # Acción 2: Construir
+                
                 await self._execute_build_step()
+                
+                # VISUALIZACIÓN: Mover el marcador a la posición de construcción
+                if self.construction_position:
+                    # El marcador se posiciona en la base + la altura de la capa actual
+                    current_y_pos = self.construction_position.clone()
+                    current_y_pos.y += self.build_step - 1 
+                    self._update_marker(current_y_pos)
+                
                 if self.build_step >= self.current_plan["size"][1]: # 'size'[1] es la altura
                     self.logger.info("CONSTRUCCION FINALIZADA.")
                     self.is_building = False
                     self.build_step = 0
                     self.state = AgentState.IDLE
+                    self._clear_marker() # Limpiar el marcador al finalizar
                     
                 # Simula el tiempo de construcción entre capas
                 await asyncio.sleep(0.5)
+        
+        elif self.state in (AgentState.IDLE, AgentState.WAITING):
+            self._clear_marker() # Limpiar el marcador si no está activo
 
     # --- Lógica de Comunicación y Planificación ---
 

@@ -4,6 +4,9 @@ import time
 import asyncio
 from abc import ABC, abstractmethod
 from enum import Enum, auto
+# NUEVAS IMPORTACIONES PARA VISUALIZACIÓN
+from mcpi import block 
+from mcpi.vec3 import Vec3
 
 # La configuración de logging se gestiona de forma centralizada en main.py
 
@@ -38,6 +41,16 @@ class BaseAgent(ABC):
         self.is_running = asyncio.Event()
         self.is_running.set() # Empieza listo para correr (si se llama a run_cycle)
 
+        # VISUALIZACIÓN (NUEVO)
+        self.marker_block_id = block.WOOL.id # Default: Lana
+        self.marker_block_data = 0 # Default: Blanco
+        # La posición inicial se establece alta para evitar conflictos
+        self.marker_position: Vec3 = Vec3(0, 70, 0) 
+        try:
+             # Colocar el marcador inicial
+            self.mc.setBlock(int(self.marker_position.x), int(self.marker_position.y), int(self.marker_position.z), block.AIR.id)
+        except Exception:
+            pass
 
     @property
     def state(self) -> AgentState:
@@ -51,6 +64,7 @@ class BaseAgent(ABC):
         # Lógica de liberación de locks (Requerimiento de Sincronización) 
         if new_state in (AgentState.STOPPED, AgentState.ERROR):
             self.release_locks()
+            self._clear_marker() # Nuevo: Borrar marcador al detenerse/fallar
             
         # Transición
         self._state = new_state
@@ -60,6 +74,43 @@ class BaseAgent(ABC):
         
         # Notificar a dependientes (se implementaría en el MessageBroker/Observer Pattern) 
         # self.broker.notify_dependents(self.agent_id, new_state)
+
+    # --- Métodos de Visualización (NUEVO) ---
+    def _set_marker_properties(self, block_id, data):
+        """Establece las propiedades del bloque marcador (ID y Data)."""
+        self.marker_block_id = block_id
+        self.marker_block_data = data
+        
+    def _update_marker(self, new_pos: Vec3):
+        """Mueve y actualiza el bloque marcador del agente."""
+        # 1. Borrar el marcador antiguo
+        try:
+            old_x, old_y, old_z = int(self.marker_position.x), int(self.marker_position.y) + 1, int(self.marker_position.z)
+            self.mc.setBlock(old_x, old_y, old_z, block.AIR.id)
+        except Exception:
+             # Ignorar errores si no hay conexión real o si es la primera vez
+             pass
+
+        # 2. Establecer la nueva posición base
+        self.marker_position.x = new_pos.x
+        self.marker_position.y = new_pos.y
+        self.marker_position.z = new_pos.z
+        
+        # 3. Colocar el nuevo marcador (1 bloque encima de la base)
+        new_x, new_y, new_z = int(new_pos.x), int(new_pos.y) + 1, int(new_pos.z)
+        try:
+            self.mc.setBlock(new_x, new_y, new_z, self.marker_block_id, self.marker_block_data)
+        except Exception as e:
+            self.logger.error(f"Fallo al colocar el marcador en MC: {e}")
+            
+    def _clear_marker(self):
+        """Borra el bloque marcador de su posición actual."""
+        try:
+            x, y, z = int(self.marker_position.x), int(self.marker_position.y) + 1, int(self.marker_position.z)
+            self.mc.setBlock(x, y, z, block.AIR.id)
+        except Exception:
+             pass
+    # --- FIN Métodos de Visualización ---
 
 
     # --- Métodos del Ciclo Perceive-Decide-Act (PDP) ---
