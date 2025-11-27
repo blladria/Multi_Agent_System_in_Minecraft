@@ -17,8 +17,8 @@ class VerticalSearchStrategy(BaseMiningStrategy):
         # 1. Modificar la posición (Minar hacia abajo)
         position.y -= 1 
         
-        # 2. Simular la extracción de materiales (pasa la lógica de simulación del bot)
-        await simulate_extraction(requirements, inventory, volume=5)
+        # 2. Simular la extracción de materiales (ajustado a 3 bloques/seg)
+        await simulate_extraction(requirements, inventory, volume=3)
         
         # 3. Simular el tiempo que toma minar
         await asyncio.sleep(1)

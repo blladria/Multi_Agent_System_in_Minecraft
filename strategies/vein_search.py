@@ -21,7 +21,8 @@ class VeinSearchStrategy(BaseMiningStrategy):
         self.logger.debug(f"Estrategia activa: Búsqueda de Veta ({self.vein_material}).")
 
         # 1. Simular la extracción de material de alto valor (simula encontrar la veta)
-        volume = 12 # Alto rendimiento por estar en la veta
+        # Ajustado el volumen a 5 (rendimiento superior por veta)
+        volume = 5 
         
         # Simular que los requisitos se extienden al material de la veta si se necesita
         if self.vein_material in requirements:

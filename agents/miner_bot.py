@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, Callable, Type
 from agents.base_agent import BaseAgent, AgentState
 from mcpi.vec3 import Vec3
-from mcpi import block # Necesario para definir el marcador
+from mcpi import block
 
 # Importar las clases de estrategia (Patrón Estrategia)
 from strategies.base_strategy import BaseMiningStrategy
@@ -15,12 +15,15 @@ from strategies.vein_search import VeinSearchStrategy
 
 # Diccionario de materiales para simulación (material: ID de bloque MC)
 MATERIAL_MAP = {
-    "wood": block.WOOD.id, # Tronco de árbol
-    "stone": block.STONE.id, # Bloque de piedra
-    "cobblestone": block.COBBLESTONE.id, # Bloque de piedra labrada
+    "wood": block.WOOD.id, 
+    "wood_planks": block.WOOD_PLANKS.id, # Añadido
+    "stone": block.STONE.id, 
+    "cobblestone": block.COBBLESTONE.id, 
     "diamond_ore": block.DIAMOND_ORE.id,
     "glass": block.GLASS.id,
-    "dirt": block.DIRT.id # AÑADIDO: Faltaba 'dirt' para la inicialización
+    "glass_pane": block.GLASS_PANE.id, # Añadido
+    "door_wood": block.DOOR_WOOD.id,   # Añadido
+    "dirt": block.DIRT.id
 }
 
 class MinerBot(BaseAgent):
@@ -74,8 +77,8 @@ class MinerBot(BaseAgent):
     async def _simulate_extraction(self, requirements: Dict[str, int], inventory: Dict[str, int], volume: int):
         blocks_extracted = 0
         for material, required_qty in requirements.items():
-            # CORRECCIÓN: 'inventory' ahora contiene 'dirt' si está en MATERIAL_MAP
             if inventory.get(material, 0) < required_qty:
+                # Modificamos la cantidad a minar para priorizar los requisitos
                 qty_to_mine = min(volume - blocks_extracted, required_qty - inventory.get(material, 0))
                 if qty_to_mine > 0:
                     inventory[material] = inventory.get(material, 0) + qty_to_mine
@@ -83,7 +86,7 @@ class MinerBot(BaseAgent):
                     self.logger.debug(f"Extraidos {qty_to_mine} de {material}. Total: {inventory[material]}")
         # Si sobra volumen de "minado" se asigna a piedra (material de relleno)
         if volume > blocks_extracted:
-            inventory["stone"] += (volume - blocks_extracted)
+            inventory["stone"] = inventory.get("stone", 0) + (volume - blocks_extracted)
 
     # --- Ciclo Perceive-Decide-Act ---
     async def perceive(self):
@@ -119,7 +122,7 @@ class MinerBot(BaseAgent):
                 simulate_extraction=self._simulate_extraction
             )
             
-            # --- CORRECCIÓN CRÍTICA: Simular excavación para visualización ---
+            # --- Trazabilidad: Simular excavación ---
             try:
                 # La posición 'mining_position' ya fue modificada por la estrategia (e.g. y-1)
                 x, y, z = int(self.mining_position.x), int(self.mining_position.y), int(self.mining_position.z)
@@ -129,7 +132,7 @@ class MinerBot(BaseAgent):
                     self.logger.debug(f"Excavando: Bloque eliminado en ({x}, {y}, {z})")
             except Exception as e:
                  self.logger.warning(f"Error al simular excavación en MC: {e}")
-            # -----------------------------------------------------------------
+            # ----------------------------------------
             
             await self._publish_inventory_update(status="PENDING")
             

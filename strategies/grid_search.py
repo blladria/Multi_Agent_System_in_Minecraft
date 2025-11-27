@@ -25,7 +25,8 @@ class GridSearchStrategy(BaseMiningStrategy):
              position.z += 1
         
         # 2. Simular la extracción de materiales
-        await simulate_extraction(requirements, inventory, volume=8)
+        # Ajustado el volumen a 3 bloques/ciclo para consistencia
+        await simulate_extraction(requirements, inventory, volume=3)
         
         # 3. Simular el tiempo que toma minar
         await asyncio.sleep(0.7)
