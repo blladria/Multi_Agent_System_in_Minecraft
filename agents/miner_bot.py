@@ -37,7 +37,17 @@ class MinerBot(BaseAgent):
         self.requirements: Dict[str, int] = {}
         # Inicializa el inventario con todos los materiales del MAPA
         self.inventory: Dict[str, int] = {mat: 0 for mat in MATERIAL_MAP.keys()}
-        self.mining_position: Vec3 = Vec3(0, 60, 0)
+        
+        # MODIFICACION: Intentar iniciar cerca del jugador para visibilidad, con fallback.
+        try:
+            player_pos = self.mc.player.getTilePos()
+            # Iniciar la minería 10 bloques al lado (x+10, z+10) del jugador, 
+            # 5 bloques por debajo para empezar a excavar en la tierra.
+            self.mining_position: Vec3 = Vec3(player_pos.x + 10, player_pos.y - 5, player_pos.z + 10)
+        except Exception:
+            # Fallback para mocks o si el jugador no está conectado (usar posición visible)
+            self.mining_position: Vec3 = Vec3(10, 60, 10)
+            
         self.mining_sector_locked = False 
         
         # Registro de estrategias
