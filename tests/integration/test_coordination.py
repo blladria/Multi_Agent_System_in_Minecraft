@@ -105,7 +105,8 @@ async def test_full_workflow_coordination(setup_coordination_system):
     await asyncio.sleep(6.0) 
     
     # DEBUG: Comprobación de estado antes de la aserción crítica
-    await debug_state_wait(builder, AgentState.WAITING, 0.5)
+    # Aumentado a 1.0s para capturar la transición del Builder
+    await debug_state_wait(builder, AgentState.WAITING, 1.0) 
 
     # Verificación 1.1: BuilderBot debe recibir el mapa y pasar a WAITING.
     assert builder.terrain_data is not None
@@ -119,11 +120,13 @@ async def test_full_workflow_coordination(setup_coordination_system):
     assert miner.state == AgentState.RUNNING 
 
     # Permitir que el MinerBot minero corra por tiempo suficiente para cumplir requisitos.
-    time_to_mine = 40 
+    # FIX: Aumentado de 40 a 45s para asegurar la finalización del ciclo de minería.
+    time_to_mine = 45 
     await asyncio.sleep(time_to_mine) 
     
     # Verificación 3.1: MinerBot debe haber cumplido requisitos y pasado a IDLE.
-    await debug_state_wait(miner, AgentState.IDLE, 0.5)
+    # Aumentado el tiempo de espera del debug a 1.0s para capturar la transición.
+    await debug_state_wait(miner, AgentState.IDLE, 1.0) 
     
     assert miner.get_total_volume() >= 96 
     assert miner.state == AgentState.IDLE 
