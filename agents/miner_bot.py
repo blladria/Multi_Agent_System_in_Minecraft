@@ -75,10 +75,10 @@ class MinerBot(BaseAgent):
         blocks_extracted = 0
         for material, required_qty in requirements.items():
             # CORRECCIÓN: 'inventory' ahora contiene 'dirt' si está en MATERIAL_MAP
-            if inventory[material] < required_qty:
-                qty_to_mine = min(volume - blocks_extracted, required_qty - inventory[material])
+            if inventory.get(material, 0) < required_qty:
+                qty_to_mine = min(volume - blocks_extracted, required_qty - inventory.get(material, 0))
                 if qty_to_mine > 0:
-                    inventory[material] += qty_to_mine
+                    inventory[material] = inventory.get(material, 0) + qty_to_mine
                     blocks_extracted += qty_to_mine
                     self.logger.debug(f"Extraidos {qty_to_mine} de {material}. Total: {inventory[material]}")
         # Si sobra volumen de "minado" se asigna a piedra (material de relleno)
@@ -118,6 +118,19 @@ class MinerBot(BaseAgent):
                 position=self.mining_position,
                 simulate_extraction=self._simulate_extraction
             )
+            
+            # --- CORRECCIÓN CRÍTICA: Simular excavación para visualización ---
+            try:
+                # La posición 'mining_position' ya fue modificada por la estrategia (e.g. y-1)
+                x, y, z = int(self.mining_position.x), int(self.mining_position.y), int(self.mining_position.z)
+                # Solo simulamos excavación si estamos en una posición razonable de "tierra"
+                if y < 65 and y > 0: 
+                    self.mc.setBlock(x, y, z, block.AIR.id)
+                    self.logger.debug(f"Excavando: Bloque eliminado en ({x}, {y}, {z})")
+            except Exception as e:
+                 self.logger.warning(f"Error al simular excavación en MC: {e}")
+            # -----------------------------------------------------------------
+            
             await self._publish_inventory_update(status="PENDING")
             
     # --- Control y Sincronización ---
