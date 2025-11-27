@@ -19,7 +19,8 @@ MATERIAL_MAP = {
     "stone": block.STONE.id, # Bloque de piedra
     "cobblestone": block.COBBLESTONE.id, # Bloque de piedra labrada
     "diamond_ore": block.DIAMOND_ORE.id,
-    "glass": block.GLASS.id
+    "glass": block.GLASS.id,
+    "dirt": block.DIRT.id # AÑADIDO: Faltaba 'dirt' para la inicialización
 }
 
 class MinerBot(BaseAgent):
@@ -31,6 +32,7 @@ class MinerBot(BaseAgent):
         super().__init__(agent_id, mc_connection, message_broker)
         
         self.requirements: Dict[str, int] = {}
+        # Inicializa el inventario con todos los materiales del MAPA
         self.inventory: Dict[str, int] = {mat: 0 for mat in MATERIAL_MAP.keys()}
         self.mining_position: Vec3 = Vec3(0, 60, 0)
         self.mining_sector_locked = False 
@@ -72,6 +74,7 @@ class MinerBot(BaseAgent):
     async def _simulate_extraction(self, requirements: Dict[str, int], inventory: Dict[str, int], volume: int):
         blocks_extracted = 0
         for material, required_qty in requirements.items():
+            # CORRECCIÓN: 'inventory' ahora contiene 'dirt' si está en MATERIAL_MAP
             if inventory[material] < required_qty:
                 qty_to_mine = min(volume - blocks_extracted, required_qty - inventory[material])
                 if qty_to_mine > 0:
