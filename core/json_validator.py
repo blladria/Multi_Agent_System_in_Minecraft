@@ -58,7 +58,8 @@ MATERIALS_REQUIREMENTS_SCHEMA = dict(BASE_SCHEMA, **{
                 # Se espera un nombre de material (string) y una cantidad (integer)
                 "^.*$": {"type": "integer", "minimum": 1}
             },
-            "required": ["wood", "stone"], # Ejemplo de materiales mínimos
+            # CORREGIDO: Requerir 'wood' y 'dirt' para alinearse con los planes base del BuilderBot.
+            "required": ["wood", "dirt"], 
             "additionalProperties": True
         }
     })
@@ -171,7 +172,7 @@ if __name__ == "__main__":
         "timestamp": "2025-10-21T15:30:00Z",
         "payload": {
             "wood": 50,
-            "stone": 100,
+            "dirt": 100,
         },
         "status": "PENDING",
         "context": {"task_id": "BOM-001"}
