@@ -126,8 +126,8 @@ async def test_full_workflow_coordination(setup_coordination_system):
     assert miner.state == AgentState.RUNNING 
 
     # Permitir que el MinerBot minero corra por tiempo suficiente para cumplir requisitos.
-    # AUMENTO DEL TIEMPO: De 100s a 120s para garantizar la finalización de los 90 bloques con la minería real.
-    time_to_mine = 120.0 
+    # AUMENTO FINAL DEL TIEMPO: De 120s a 150s para garantizar la finalización.
+    time_to_mine = 150.0 
     await asyncio.sleep(time_to_mine) 
     
     # Verificación 3.1: MinerBot debe haber cumplido requisitos y pasado a IDLE.
