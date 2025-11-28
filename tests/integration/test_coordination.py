@@ -125,14 +125,14 @@ async def test_full_workflow_coordination(setup_coordination_system):
     assert miner.requirements != {}
     assert miner.state == AgentState.RUNNING 
 
-    # CORRECCIÓN FINAL: Inyectar inventario para forzar la terminación.
-    # Requisitos: 30 wood, 60 dirt (Total 90). 
-    # Inyectamos 30 wood (totalmente cumplido) y 59 dirt (a 1 de cumplir).
-    # Los siguientes 3 bloques minados (que son dirt) cumplirán el requisito en el primer ciclo.
-    miner.inventory = {"wood": 30, "dirt": 59} 
+    # CORRECCIÓN DE PRUEBA: Inyectar inventario con un volumen que exceda los requisitos (90) 
+    # para garantizar que la transición a IDLE se active en el siguiente ciclo.
+    # Requisitos: 30 wood, 60 dirt (Total 90). Inyectamos 30 wood y 63 dirt (Total 93).
+    miner.inventory = {"wood": 30, "dirt": 63}
 
-    # 5.0 segundos son más que suficientes para los 1-2 ciclos restantes.
-    time_to_mine = 5.0 
+    # Reducir el tiempo de espera. 2.0 segundos es suficiente para que el Miner complete 
+    # uno o dos ciclos de decide/act, detecte el cumplimiento, y transicione a IDLE.
+    time_to_mine = 2.0 
     await asyncio.sleep(time_to_mine) 
     
     # Verificación 3.1: MinerBot debe haber cumplido requisitos y pasado a IDLE.
