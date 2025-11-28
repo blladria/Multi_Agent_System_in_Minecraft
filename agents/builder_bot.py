@@ -10,22 +10,22 @@ from mcpi.vec3 import Vec3
 # Diccionario de plantillas de construcción simuladas
 BUILDING_TEMPLATES = {
     "shelter_basic": {
-        # Recalculado: 5x3x5. Floor (25) + Walls (16*2=32) + Roof (25) = 82 blocks (approx)
-        "materials": {"wood_planks": 30, "stone": 40, "dirt": 15}, 
+        # Materiales OBTENIBLES: Madera (logs sin refinar) y Tierra.
+        "materials": {"wood": 30, "dirt": 60}, 
         "size": (5, 3, 5), # (x, y, z)
-        "description": "Un refugio simple de 5x3x5"
+        "description": "Un refugio simple de 5x3x5 hecho de madera sin refinar y tierra."
     },
     "house_basic": {
-        # Recalculado: L=5, H=6, W=5. Floor(25) + Walls(16*4=64) + Roof(25) = 114 blocks (approx)
-        "materials": {"wood_planks": 60, "stone": 30, "wood": 25, "glass_pane": 4, "door_wood": 1}, 
+        # Se reemplazan wood_planks, stone, glass_pane, door_wood por wood y dirt
+        "materials": {"wood": 60, "dirt": 60}, 
         "size": (5, 6, 5), # (x, y, z)
-        "description": "Una casa basica de 5x6x5 con techo y puerta"
+        "description": "Una casa basica de 5x6x5 con techo y puerta (solo materiales basicos)"
     },
     "tower_watch": {
-        # MATERIALES BÁSICOS SIN CRAFTEO (Stone, Wood)
-        "materials": {"stone": 128, "wood": 16, "cobblestone": 8},
+        # Reemplazar stone/cobblestone por dirt
+        "materials": {"dirt": 128, "wood": 16},
         "size": (3, 10, 3),
-        "description": "Una torre de vigilancia de 3x10x3"
+        "description": "Una torre de vigilancia de 3x10x3 de tierra y madera"
     }
 }
 
@@ -38,8 +38,8 @@ class BuilderBot(BaseAgent):
         super().__init__(agent_id, mc_connection, message_broker)
         
         self.terrain_data: Dict[str, Any] = {}
-        # CAMBIO: Usar la nueva casa por defecto
-        self.current_plan: Dict[str, Any] = BUILDING_TEMPLATES["house_basic"] 
+        # CAMBIO: Usar la cabaña simple (shelter_basic) por defecto
+        self.current_plan: Dict[str, Any] = BUILDING_TEMPLATES["shelter_basic"] 
         self.required_bom: Dict[str, int] = {}
         self.current_inventory: Dict[str, int] = {}
         self.construction_position: Vec3 = None
@@ -205,8 +205,14 @@ class BuilderBot(BaseAgent):
         material_key_lower = required_materials_keys[self.build_step % len(required_materials_keys)]
         
         # Lógica de mapeo para obtener el ID de bloque
-        # Reemplazar '_planks' con '_PLANKS' y buscar el ID.
-        mat_id = getattr(block, material_key_lower.upper().replace('_PLANK','_PLANKS').replace('_PANE','_PANE').replace('_WOOD','_WOOD'), block.STONE).id
+        # Ahora solo se espera 'wood' (ID 17) o 'dirt' (ID 3)
+        mat_id = block.DIRT.id 
+        if material_key_lower == 'wood':
+             mat_id = block.WOOD.id # ID 17 (Log de madera sin refinar)
+        elif material_key_lower == 'dirt':
+             mat_id = block.DIRT.id # ID 3
+        # Si no es wood ni dirt (p. ej. 'stone'), se deja en dirt para cumplir el requisito de no usar procesados
+        
         blocks_to_place = 0
         
         
@@ -214,18 +220,18 @@ class BuilderBot(BaseAgent):
         
         if self.current_plan["description"].startswith("Una casa basica"):
             
-            # CAPA 0: Piso
+            # CAPA 0: Piso (Ahora de WOOD)
             if self.build_step == 0:
-                material_key_lower = "stone"
-                mat_id = block.STONE.id
+                material_key_lower = "wood"
+                mat_id = block.WOOD.id # ID 17
                 blocks_to_place = size_x * size_z # 25
                 self.mc.setBlocks(x0, current_y, z0, x1, current_y, z1, mat_id)
                 self.logger.info(f"Construyendo: Piso ({blocks_to_place} bloques de {material_key_lower}).")
 
             # CAPAS 1 a 4: Paredes, Ventanas y Puerta. (Hollow Interior)
             elif 1 <= self.build_step <= 4:
-                material_key_lower = "wood_planks"
-                mat_id = block.WOOD_PLANKS.id
+                material_key_lower = "dirt"
+                mat_id = block.DIRT.id # ID 3
                 
                 blocks_in_layer = size_x * size_z
                 blocks_inner = (size_x-2) * (size_z-2) 
@@ -237,7 +243,7 @@ class BuilderBot(BaseAgent):
                 # 2. Vaciar el interior (CORRECCIÓN: Asegura que el interior esté vacío)
                 self.mc.setBlocks(x0 + 1, current_y, z0 + 1, x1 - 1, current_y, z1 - 1, block.AIR.id)
                 
-                # 3. Inserciones: Puerta y Ventana
+                # 3. Inserciones: Puerta y Ventana (Se usa AIR para huecos)
                 mid_x = x0 + size_x // 2 
                 mid_z = z0 + size_z // 2 
                 
@@ -245,47 +251,67 @@ class BuilderBot(BaseAgent):
                 if self.build_step == 1: # Parte inferior de la puerta
                     door_pos_x = x0
                     door_pos_z = mid_z 
-                    # Colocamos el bloque de puerta. La API de MCPI coloca la puerta completa (2 bloques de altura)
-                    self.mc.setBlock(door_pos_x, current_y, door_pos_z, block.DOOR_WOOD.id, 0)
-                    # La puerta reemplaza un bloque de pared
-                    blocks_to_place -= 1 
-                    material_key_lower = "door_wood" # Usamos la clave de la puerta para el consumo
-                    self.logger.debug(f"Colocando puerta en ({door_pos_x}, {current_y}, {door_pos_z}).")
+                    # Colocamos el bloque de AIRE.
+                    self.mc.setBlock(door_pos_x, current_y, door_pos_z, block.AIR.id)
+                    # El material se sigue consumiendo (simulado) pero el bloque puesto es aire.
+                    material_key_lower = "dirt" 
+                    self.logger.debug(f"Colocando hueco de puerta en ({door_pos_x}, {current_y}, {door_pos_z}).")
 
                 # Ventana: Capa 3, en el centro de la pared X=x1 (opuesta a la puerta)
                 if self.build_step == 3:
                     window_pos_x = x1
                     window_pos_z = mid_z
-                    self.mc.setBlock(window_pos_x, current_y, window_pos_z, block.GLASS_PANE.id)
-                    blocks_to_place -= 1 # Contamos el uso de la ventana
-                    material_key_lower = "glass_pane"
-                    self.logger.debug(f"Colocando ventana en ({window_pos_x}, {current_y}, {window_pos_z}).")
+                    self.mc.setBlock(window_pos_x, current_y, window_pos_z, block.AIR.id) # Reemplazado por AIR
+                    material_key_lower = "dirt" 
+                    self.logger.debug(f"Colocando hueco de ventana en ({window_pos_x}, {current_y}, {window_pos_z}).")
 
                 # Si es Capa 2, simplemente se asegura de que el hueco de la puerta esté libre de ladrillos
                 if self.build_step == 2:
                     door_pos_x = x0
                     door_pos_z = mid_z 
                     self.mc.setBlock(door_pos_x, current_y, door_pos_z, block.AIR.id)
+                    
+                # Si el bloque colocado es AIR, ajustamos el conteo de bloques a consumir
+                # Consideramos que los bloques reemplazados (puerta/ventana) consumen el material base (dirt)
+                
+                # Para evitar errores de consumo negativo, restablecemos el material a consumir
+                blocks_to_place = 16 
 
 
-            # CAPA 5: Techo
+            # CAPA 5: Techo (Ahora de WOOD)
             elif self.build_step == 5:
                 material_key_lower = "wood"
-                mat_id = block.WOOD.id
+                mat_id = block.WOOD.id # ID 17
                 blocks_to_place = size_x * size_z # 25
                 self.mc.setBlocks(x0, current_y, z0, x1, current_y, z1, mat_id)
                 self.logger.info(f"Construyendo: Techo ({blocks_to_place} bloques de {material_key_lower}).")
             
-            else: # Resto de capas (si hay más capas en el futuro)
+            else: # Fallback para otras capas de la casa
+                 material_key_lower = "dirt"
+                 mat_id = block.DIRT.id
                  blocks_to_place = (size_x * 2) + (size_z * 2) - 4 # Perímetro
-                 # Fallback a la construcción de perímetro simple
-                 for x in range(x0, x1 + 1):
-                    self.mc.setBlock(x, current_y, z0, mat_id) # Pared Z=z0
-                    self.mc.setBlock(x, current_y, z1, mat_id) # Pared Z=z1
-                 for z in range(z0, z1 + 1):
-                    self.mc.setBlock(x0, current_y, z, mat_id) # Pared X=x0
-                    self.mc.setBlock(x1, current_y, z, mat_id) # Pared X=x1
+                 # Colocación de perímetro simple
+                 self.mc.setBlocks(x0, current_y, z0, x1, current_y, z0, mat_id) # Pared Z=z0
+                 self.mc.setBlocks(x0, current_y, z1, x1, current_y, z1, mat_id) # Pared Z=z1
+                 self.mc.setBlocks(x0, current_y, z0, x0, current_y, z1, mat_id) # Pared X=x0
+                 self.mc.setBlocks(x1, current_y, z0, x1, current_y, z1, mat_id) # Pared X=x1
         
+        # --- Lógica de Construcción de SHELTER y TOWER (Perímetro simple) ---
+        elif self.current_plan["description"].startswith("Un refugio simple") or \
+             self.current_plan["description"].startswith("Una torre de vigilancia"):
+            
+            # Se usa el material por defecto para la capa (ciclado entre wood y dirt)
+            if material_key_lower == 'wood':
+                 mat_id = block.WOOD.id
+            else:
+                 mat_id = block.DIRT.id
+            
+            blocks_to_place = size_x * size_z # Bloques por defecto para una capa sólida
+            
+            # Construir cuboide sólido para la capa actual
+            self.mc.setBlocks(x0, current_y, z0, x1, current_y, z1, mat_id)
+            self.logger.info(f"Construyendo: Capa genérica ({blocks_to_place} bloques de {material_key_lower}).")
+
         # --- Lógica de Consumo (Común) ---
         
         # Consumir el material del inventario (SIMULACIÓN DE USO)
