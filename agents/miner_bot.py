@@ -84,19 +84,56 @@ class MinerBot(BaseAgent):
         return all(self.inventory.get(material, 0) >= required_qty 
                    for material, required_qty in self.requirements.items())
 
-    async def _simulate_extraction(self, requirements: Dict[str, int], inventory: Dict[str, int], volume: int):
-        blocks_extracted = 0
-        for material, required_qty in requirements.items():
-            if inventory.get(material, 0) < required_qty:
-                # Modificamos la cantidad a minar para priorizar los requisitos
-                qty_to_mine = min(volume - blocks_extracted, required_qty - inventory.get(material, 0))
-                if qty_to_mine > 0:
-                    inventory[material] = inventory.get(material, 0) + qty_to_mine
-                    blocks_extracted += qty_to_mine
-                    self.logger.debug(f"Extraidos {qty_to_mine} de {material}. Total: {inventory[material]}")
-        # Si sobra volumen de "minado" se asigna a piedra (material de relleno)
-        if volume > blocks_extracted:
-            inventory["stone"] = inventory.get("stone", 0) + (volume - blocks_extracted)
+    # --- NUEVA Lógica de Extracción REAL ---
+    
+    async def _mine_current_block(self, position: Vec3) -> bool:
+        """
+        Rompe el bloque en la posición dada en MC (animación visual) y actualiza el inventario
+        solo si se extrajo un material útil o genérico.
+        """
+        x, y, z = int(position.x), int(position.y), int(position.z)
+        
+        # 1. Obtener el tipo de bloque actual
+        try:
+            current_block_id = self.mc.getBlock(x, y, z)
+        except Exception as e:
+            self.logger.error(f"Error al obtener bloque en MC ({x}, {y}, {z}): {e}")
+            return False
+
+        if current_block_id == block.AIR.id:
+            self.logger.debug(f"Posición ({x}, {y}, {z}) ya es aire. Minería ignorada.")
+            return False
+
+        # 2. Mapear ID a Material Relevante (Buscamos 'wood' y 'dirt')
+        material_found = None
+        for name, id in MATERIAL_MAP.items():
+            # Si el ID coincide Y el material es requerido O es uno de los materiales base
+            # Buscamos WOOD (17) o DIRT (3)
+            if id == current_block_id and (name in self.requirements or name in ("wood", "dirt")):
+                 material_found = name
+                 break
+        
+        # 3. Romper el Bloque en Minecraft (ACCION REAL y ANIMACIÓN)
+        try:
+            # Esta línea rompe el bloque y proporciona la animación visual.
+            self.mc.setBlock(x, y, z, block.AIR.id)
+            self.logger.debug(f"BLOQUE ROTO en ({x}, {y}, {z}). ID: {current_block_id}")
+            
+            # 4. Actualizar Inventario
+            if material_found:
+                # Solo se extrae 1 unidad por bloque roto.
+                self.inventory[material_found] = self.inventory.get(material_found, 0) + 1
+                self.logger.info(f"EXTRAÍDO 1 de {material_found}. Total: {self.inventory[material_found]}")
+            else:
+                # Si el material no es requerido/mapeado (e.g., piedra, gravilla), se asigna a dirt genérico para el volumen.
+                self.inventory["dirt"] = self.inventory.get("dirt", 0) + 1 
+                self.logger.debug(f"BLOQUE ROTO Y DESCARTADO/ASIGNADO A DIRT. ID: {current_block_id}")
+                
+            return True
+        except Exception as e:
+            self.logger.error(f"Error al romper bloque en MC: {e}")
+            return False
+
 
     # --- Ciclo Perceive-Decide-Act ---
     async def perceive(self):
@@ -120,29 +157,18 @@ class MinerBot(BaseAgent):
     async def act(self):
         if self.state == AgentState.RUNNING and self.mining_sector_locked:
             
-            # VISUALIZACIÓN: Mover el marcador a la posición de minería actual (antes de excavar)
-            # La estrategia modifica la posición Vec3 in-place (ej. position.y -= 1)
+            # VISUALIZACIÓN: Mover el marcador a la posición de minería actual
             self._update_marker(self.mining_position) 
             
             # Ejecuta la estrategia de minería (Patrón Strategy)
+            # Pasamos la nueva función _mine_current_block como callable
             await self.current_strategy_instance.execute(
                 requirements=self.requirements,
                 inventory=self.inventory,
                 position=self.mining_position,
-                simulate_extraction=self._simulate_extraction
+                # NUEVO CALLBACK: La estrategia llamará a esta función para romper bloques
+                mine_block_callback=self._mine_current_block 
             )
-            
-            # --- Trazabilidad: Simular excavación ---
-            try:
-                # La posición 'mining_position' ya fue modificada por la estrategia (e.g. y-1)
-                x, y, z = int(self.mining_position.x), int(self.mining_position.y), int(self.mining_position.z)
-                # Solo simulamos excavación si estamos en una posición razonable de "tierra"
-                if y < 65 and y > 0: 
-                    self.mc.setBlock(x, y, z, block.AIR.id)
-                    self.logger.debug(f"Excavando: Bloque eliminado en ({x}, {y}, {z})")
-            except Exception as e:
-                 self.logger.warning(f"Error al simular excavación en MC: {e}")
-            # ----------------------------------------
             
             await self._publish_inventory_update(status="PENDING")
             
