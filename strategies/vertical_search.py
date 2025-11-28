@@ -7,37 +7,35 @@ from .base_strategy import BaseMiningStrategy
 class VerticalSearchStrategy(BaseMiningStrategy):
     """
     Estrategia de Búsqueda Vertical: Simula una perforación hacia abajo.
-    Ahora utiliza un callback para romper bloques reales.
+    Ahora utiliza un callback para romper bloques reales, asegurando que se rompen 3 bloques distintos.
     """
     async def execute(self, requirements: Dict[str, int], inventory: Dict[str, int], position: Vec3, mine_block_callback: Callable):
         """
-        Mueve la posición Y hacia abajo y rompe 'volume' bloques.
+        Mina 3 bloques directamente debajo del agente y luego mueve el agente 1 bloque hacia abajo.
+        Esto simula un proceso de perforación (drilling).
         """
         self.logger.debug("Estrategia activa: Búsqueda Vertical (hacia abajo).")
 
         # El volumen/rate de minería es 3 bloques/ciclo.
         volume = 3
-        y_initial = position.y
         
-        # 1. Intentar minar 3 bloques en la posición actual antes de moverse.
+        # 1. Minar 3 bloques distintos debajo del agente
         for i in range(volume):
-            x, y, z = position.x, position.y, position.z
+            # Clonar la posición del agente y calcular la posición del bloque a minar (y-1, y-2, y-3)
+            mine_pos = position.clone()
+            # Posición de minería es (Y - 1), (Y - 2), (Y - 3)
+            mine_pos.y -= (i + 1)
             
-            # 2. Minar en la posición y actualizar inventario (callback real)
-            block_mined = await mine_block_callback(position)
-            
-            # 3. Si no minamos nada (aire), nos movemos hacia abajo.
-            if not block_mined:
-                 position.y -= 1 
-                 self.logger.debug(f"No hay bloque en ({x}, {y}, {z}). Moviendo posición Y a {position.y}.")
+            # Minar el bloque
+            await mine_block_callback(mine_pos)
             
             # Esperamos un tiempo por bloque minado/intentado minar
             await asyncio.sleep(0.3) 
         
-        # 4. Asegurar que nos movemos un poco hacia abajo si no lo hicimos en el loop
-        if volume > 0 and y_initial == position.y:
-             position.y -= 1 
-             self.logger.debug(f"Ciclo finalizado. Moviendo posición Y a {position.y}.")
+        # 2. Mover la posición del agente hacia abajo 1 bloque (para el siguiente ciclo)
+        # Esto asegura que la perforación continúe hacia abajo, cumpliendo con la lógica original.
+        position.y -= 1 
+        self.logger.debug(f"Agente se mueve a Y={position.y} para el siguiente ciclo.")
              
-        # Simular el tiempo de minería restante.
+        # 3. Simular el tiempo que toma minar
         await asyncio.sleep(0.1)
