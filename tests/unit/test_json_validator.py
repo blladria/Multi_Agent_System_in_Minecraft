@@ -15,7 +15,8 @@ VALID_MSG_BASE = {
     "source": "BuilderBot",
     "target": "MinerBot",
     "timestamp": VALID_TIMESTAMP,
-    "payload": {"wood": 10, "stone": 20},
+    # CORRECCIÓN: Se usa 'dirt' en lugar de 'stone'.
+    "payload": {"wood": 10, "dirt": 20},
     "status": "PENDING",
     "context": {"task_id": "TEST-001"}
 }
@@ -62,7 +63,7 @@ def test_invalid_type_in_payload_fail():
     """Prueba que el mensaje falla si el tipo de dato en el payload es incorrecto."""
     invalid_msg = VALID_MSG_BASE.copy()
     # 'wood' debe ser entero, no string
-    invalid_msg["payload"] = {"wood": "diez", "stone": 20} 
+    invalid_msg["payload"] = {"wood": "diez", "dirt": 20} 
     with pytest.raises(ValidationError):
         validate_message(invalid_msg)
 

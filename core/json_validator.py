@@ -58,7 +58,7 @@ MATERIALS_REQUIREMENTS_SCHEMA = dict(BASE_SCHEMA, **{
                 # Se espera un nombre de material (string) y una cantidad (integer)
                 "^.*$": {"type": "integer", "minimum": 1}
             },
-            # CORREGIDO: Requerir 'wood' y 'dirt' para alinearse con los planes base del BuilderBot.
+            # CORRECCIÓN CLAVE: Ahora se requiere 'wood' y 'dirt'
             "required": ["wood", "dirt"], 
             "additionalProperties": True
         }

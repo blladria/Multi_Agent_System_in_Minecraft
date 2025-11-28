@@ -120,26 +120,27 @@ async def test_full_workflow_coordination(setup_coordination_system):
     
     # --- FASE 2/3: Minería y Suministro (Miner -> Builder) ---
 
-    # El MinerBot debe estar en RUNNING (minando)
+    # El MinerBot debe haber recibido el BOM y estar en RUNNING (minando)
     await asyncio.sleep(0.5) 
     assert miner.requirements != {}
     assert miner.state == AgentState.RUNNING 
 
     # Permitir que el MinerBot minero corra por tiempo suficiente para cumplir requisitos.
-    time_to_mine = 50
+    # El volumen total es 90 (30 wood, 60 dirt) con rate de 3/s, por lo que el tiempo es suficiente.
+    time_to_mine = 70.0 
     await asyncio.sleep(time_to_mine) 
     
     # Verificación 3.1: MinerBot debe haber cumplido requisitos y pasado a IDLE.
     await debug_state_wait(miner, AgentState.IDLE, 1.0)
     
-    # FIX: Se corrige la aserción a 85 para que el test pase con el resultado actual
-    assert miner.get_total_volume() >= 85 
+    # CORRECCIÓN: La aserción se ajusta a los 90 bloques requeridos.
+    assert miner.get_total_volume() >= 90 
     assert miner.state == AgentState.IDLE 
 
     # --- FASE 4: Construcción (Builder se activa) ---
     
     # Verificación 4.1: El BuilderBot debe empezar a construir y terminar.
-    # Se espera que regrese a IDLE tras completar todas las capas (el tiempo de espera es ahora para la finalización).
+    # Se espera que regrese a IDLE tras completar todas las capas.
     await debug_state_wait(builder, AgentState.IDLE, 5.0)
      
     assert builder.state == AgentState.IDLE
