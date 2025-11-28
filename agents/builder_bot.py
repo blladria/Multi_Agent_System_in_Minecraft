@@ -49,7 +49,22 @@ class BuilderBot(BaseAgent):
         self.is_building = False
         
         # VISUALIZACIÓN: Marcador Rojo (Lana Roja = data 14)
-        self._set_marker_properties(block.WOOL.id, 14)
+        # LLAMADA ELIMINADA: La deshabilitamos para evitar interferencias
+        # self._set_marker_properties(block.WOOL.id, 14) 
+
+    # --- Sobreescritura de Métodos de Visualización (Deshabilitados) ---
+    def _set_marker_properties(self, block_id, data):
+        """Sobreescrito: Deshabilita la configuración del marcador para BuilderBot."""
+        pass
+        
+    def _update_marker(self, new_pos: Vec3):
+        """Sobreescrito: Deshabilita el movimiento del marcador para BuilderBot."""
+        pass
+            
+    def _clear_marker(self):
+        """Sobreescrito: Deshabilita la limpieza del marcador para BuilderBot."""
+        pass
+    # ----------------------------------------------------------------
 
     async def perceive(self):
         if self.broker.has_messages(self.agent_id):
@@ -100,14 +115,11 @@ class BuilderBot(BaseAgent):
                 
                 build_finished = await self._execute_build_step()
                 
-                # VISUALIZACIÓN: Mover el marcador a la posición de construcción
-                if self.construction_position:
-                    # El marcador se posiciona en la base + la altura de la capa actual
-                    current_y_pos = self.construction_position.clone()
-                    # La capa se acaba de construir (build_step ya se ha incrementado),
-                    # por lo que el marcador debe estar en la capa más alta que se acaba de crear 
-                    current_y_pos.y += self.build_step - 1 
-                    self._update_marker(current_y_pos)
+                # LLAMADA ELIMINADA: Se ha quitado el movimiento del marcador para evitar errores de construcción.
+                # if self.construction_position:
+                #     current_y_pos = self.construction_position.clone()
+                #     current_y_pos.y += self.build_step - 1 
+                #     self._update_marker(current_y_pos) 
                 
                 # CAMBIO: Usar el valor de retorno para terminar la construcción
                 if build_finished:
@@ -115,7 +127,8 @@ class BuilderBot(BaseAgent):
                     self.is_building = False
                     self.build_step = 0
                     self.state = AgentState.IDLE
-                    self._clear_marker() # Limpiar el marcador al finalizar
+                    # La limpieza del marcador ahora está anulada en el método _clear_marker.
+                    # self._clear_marker() 
                     
                     # CORRECCIÓN (5): Evitar reconstrucción. Limpiar datos de posición/mapa.
                     self.construction_position = None
@@ -125,7 +138,9 @@ class BuilderBot(BaseAgent):
                 await asyncio.sleep(0.5)
         
         elif self.state in (AgentState.IDLE, AgentState.WAITING):
-            self._clear_marker() # Limpiar el marcador si no está activo (es una preferencia visual)
+            # LLAMADA ELIMINADA: La limpieza del marcador ahora está anulada.
+            # self._clear_marker() 
+            pass
 
     # --- Lógica de Comunicación y Planificación ---
 
