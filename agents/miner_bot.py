@@ -39,6 +39,7 @@ class MinerBot(BaseAgent):
         
         try:
             player_pos = self.mc.player.getTilePos()
+            # Posición inicial de minería profunda
             self.mining_position: Vec3 = Vec3(player_pos.x + 10, 60, player_pos.z + 10)
         except Exception:
             self.mining_position: Vec3 = Vec3(10, 60, 10)
@@ -142,7 +143,7 @@ class MinerBot(BaseAgent):
                 self.state = AgentState.IDLE 
             else:
                  # FIX CRÍTICO: Re-evaluar estrategia CADA ciclo si aún se está minando.
-                 # Esto asegura el cambio de Vertical a Grid si se cumple una parte.
+                 # Esto asegura el cambio de Vertical a Grid si se cumple una parte del BOM.
                  await self._select_adaptive_strategy()
                  
                  if not self.mining_sector_locked:
@@ -258,6 +259,17 @@ class MinerBot(BaseAgent):
                 self.current_strategy_instance = StrategyClass(self.mc, self.logger)
                 self.current_strategy_name = new_strategy_name
                 self.logger.info(f"Estrategia de mineria adaptada a: {new_strategy_name}")
+                
+                # FIX 2b: Reset position and strategy state when switching to Grid from Vertical/Vein
+                # Asumimos que si la Y actual es baja, venimos de Vertical/Vein.
+                if new_strategy_name == "grid" and self.mining_position.y < 60:
+                     self.mining_position.y = 65  # Reset Y a un nivel seguro de superficie
+                     # Reiniciar los anclajes de la GridSearchStrategy recién instanciada.
+                     self.current_strategy_instance.start_x = None 
+                     self.current_strategy_instance.start_z = None
+                     self.current_strategy_instance.mining_y_level = None
+                     self.logger.info("Posicion y anclaje restablecidos para GridSearch en la superficie (Y=65).")
+                     
             else:
                 self.logger.error(f"Estrategia adaptativa '{new_strategy_name}' no encontrada. Usando vertical.")
                 self.current_strategy_instance = VerticalSearchStrategy(self.mc, self.logger)

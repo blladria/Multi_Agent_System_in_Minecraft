@@ -58,7 +58,7 @@ class GridSearchStrategy(BaseMiningStrategy):
         if dirt_needed > 0:
             self.logger.debug(f"Estrategia: Grid/Superficie (Mina horizontal) en ({x_target}, {self.mining_y_level}, {z_target}).")
             
-            # Minar DOS bloques: el que está en la altura de la superficie (GRASS/DIRT) y el de abajo (DIRT)
+            # 4. Minar DOS bloques: el que está en la altura de la superficie (GRASS/DIRT) y el de abajo (DIRT)
             mine_pos_top = Vec3(x_target, position.y - 1, z_target) 
             mine_pos_bottom = Vec3(x_target, position.y - 2, z_target) 
 

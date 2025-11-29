@@ -309,7 +309,6 @@ class BuilderBot(BaseAgent):
                  material_key_lower = "dirt"
                  mat_id = block.DIRT.id
                  blocks_to_place = (size_x * 2) + (size_z * 2) - 4 # Perímetro
-                 # Colocación de perímetro simple
                  self.mc.setBlocks(x0, current_y, z0, x1, current_y, z0, mat_id) # Pared Z=z0
                  self.mc.setBlocks(x0, current_y, z1, x1, current_y, z1, mat_id) # Pared Z=z1
                  self.mc.setBlocks(x0, current_y, z0, x0, current_y, z1, mat_id) # Pared X=x0
