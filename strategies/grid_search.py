@@ -15,7 +15,7 @@ class GridSearchStrategy(BaseMiningStrategy):
         self.search_x = 0
         self.search_z = 0
         self.WOOD_BLOCK_ID = block.WOOD.id
-        self.LEAVES_BLOCK_ID = block.LEAVES.id # Añadido para mejor detección
+        self.LEAVES_BLOCK_ID = block.LEAVES.id
 
     async def execute(self, requirements: Dict[str, int], inventory: Dict[str, int], position: Vec3, mine_block_callback: Callable):
         
@@ -29,7 +29,7 @@ class GridSearchStrategy(BaseMiningStrategy):
         position.z += 1
         x_target, z_target = int(position.x), int(position.z)
         
-        # Obtener la altura real de la superficie
+        # Obtener la altura real de la superficie (para alineación y minado)
         current_surface_y = self.mc.getHeight(x_target, z_target)
         # CORRECCIÓN MARCADOR: La posición base es el bloque sólido superior.
         position.y = current_surface_y 
@@ -43,7 +43,7 @@ class GridSearchStrategy(BaseMiningStrategy):
             is_tree_found = False
             y_trunk_base = y_check_start
             
-            # 2. Búsqueda vertical de troncos (simulación de detección de árbol)
+            # 2. Búsqueda vertical de troncos
             for dy in range(15): 
                 y_check = y_check_start + dy
                 
@@ -52,7 +52,6 @@ class GridSearchStrategy(BaseMiningStrategy):
                 except Exception:
                     break
 
-                # El tronco puede empezar justo por encima de la tierra (y_check_start)
                 if block_at_pos == self.WOOD_BLOCK_ID:
                     is_tree_found = True
                     y_trunk_base = y_check 
@@ -66,13 +65,18 @@ class GridSearchStrategy(BaseMiningStrategy):
                     mine_pos = Vec3(x_target, y_mine, z_target)
                     
                     try:
-                        # CORRECCIÓN PICADO: Detener la tala inmediatamente si se golpea el aire
-                        if self.mc.getBlock(x_target, y_mine, z_target) == block.AIR.id:
-                             break 
+                        block_to_mine_id = self.mc.getBlock(x_target, y_mine, z_target)
                     except Exception:
-                        break # Salir si está fuera de los límites del mundo
+                        break
 
-                    await mine_block_callback(mine_pos)
+                    # CORRECCIÓN PICADO: Detener la tala si se golpea el aire
+                    if block_to_mine_id == block.AIR.id:
+                        break 
+                    
+                    # Asegurar que solo minamos madera o hojas
+                    if block_to_mine_id == self.WOOD_BLOCK_ID or block_to_mine_id == self.LEAVES_BLOCK_ID:
+                        await mine_block_callback(mine_pos)
+                    
                     await asyncio.sleep(0.1)
             else:
                  self.logger.debug("No se encontró madera. Continuando búsqueda horizontal.")
@@ -91,12 +95,11 @@ class GridSearchStrategy(BaseMiningStrategy):
         else:
             self.logger.debug("Estrategia: Grid/General. (Minado en área cúbica por defecto).")
             
-            # Comportamiento Grid por defecto (minar 3 bloques de profundidad)
+            # Comportamiento Grid por defecto
             volume = 3
             for i in range(volume):
-                temp_pos = position.clone()
-                temp_pos.y -= i 
-                await mine_block_callback(temp_pos)
+                mine_pos = Vec3(x_target, current_surface_y - i, z_target)
+                await mine_block_callback(mine_pos)
                 await asyncio.sleep(0.2) 
         
         await asyncio.sleep(0.1)

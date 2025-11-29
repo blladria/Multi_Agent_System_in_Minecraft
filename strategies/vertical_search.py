@@ -36,10 +36,11 @@ class VerticalSearchStrategy(BaseMiningStrategy):
             
             position.x += 1
             
-            # CORRECCIÓN: Obtener la altura real de la superficie para el nuevo pozo
+            # CORRECCIÓN DE ALTURA: Obtener la altura real de la superficie para el nuevo pozo
             try:
+                # mc.getHeight devuelve el bloque sólido más alto.
                 new_y = self.mc.getHeight(int(position.x), int(position.z))
-                # Asegura que la nueva Y sea al menos 65 si getHeight falla o devuelve algo bajo
+                # Posiciona el minero en ese bloque sólido para que el marcador (Y+1) esté a ras.
                 position.y = max(new_y, self.RESTART_Y)
             except Exception:
                  position.y = self.RESTART_Y

@@ -206,7 +206,7 @@ class MinerBot(BaseAgent):
                                   for mat, qty in self.requirements.items() if qty > self.inventory.get(mat, 0)}
         
         if not remaining_requirements:
-            return # Todo cumplido.
+            return 
 
         most_needed_material = max(remaining_requirements, key=remaining_requirements.get)
 
