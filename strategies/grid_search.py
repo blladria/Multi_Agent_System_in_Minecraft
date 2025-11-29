@@ -69,11 +69,11 @@ class GridSearchStrategy(BaseMiningStrategy):
                     except Exception:
                         break
 
-                    # CORRECCIÓN PICADO: Detener la tala si se golpea el aire
+                    # CORRECCIÓN PICADO: Detener la tala si se golpea el aire o ya se picó
                     if block_to_mine_id == block.AIR.id:
                         break 
                     
-                    # Asegurar que solo minamos madera o hojas
+                    # Asegurar que solo minamos madera o hojas (lo que mapea a "wood" en miner_bot)
                     if block_to_mine_id == self.WOOD_BLOCK_ID or block_to_mine_id == self.LEAVES_BLOCK_ID:
                         await mine_block_callback(mine_pos)
                     

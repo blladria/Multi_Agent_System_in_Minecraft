@@ -87,12 +87,19 @@ class MinerBot(BaseAgent):
         if current_block_id == block.AIR.id:
             return False
 
-        # 1. Identificar material requerido
+        # 1. Identificar material requerido (LÓGICA MEJORADA PARA GRASS/DIRT/WOOD/LEAVES)
         material_found = None
-        for name, id in MATERIAL_MAP.items():
-            if id == current_block_id and name in self.requirements:
-                 material_found = name
-                 break
+        
+        if "dirt" in self.requirements and (current_block_id == block.DIRT.id or current_block_id == block.GRASS.id):
+            material_found = "dirt" # Grass counts as dirt
+        elif "wood" in self.requirements and (current_block_id == block.WOOD.id or current_block_id == block.LEAVES.id):
+             material_found = "wood" # Leaves/Wood count as wood
+        else:
+             # Comprobar materiales específicos (piedra, minerales, etc.)
+             for name, id in MATERIAL_MAP.items():
+                 if id == current_block_id and name in self.requirements:
+                      material_found = name
+                      break
         
         # 2. Romper el Bloque en Minecraft
         try:
@@ -104,8 +111,14 @@ class MinerBot(BaseAgent):
                 current_qty = self.inventory.get(material_found, 0)
 
                 if required_qty > 0 and current_qty < required_qty:
-                    self.inventory[material_found] = current_qty + 1
-                    self.logger.info(f"EXTRAÍDO 1 de {material_found}. Total: {self.inventory[material_found]}/{required_qty}")
+                    # Solo se cuenta si es wood o dirt (los materiales del BuilderBot)
+                    if material_found in ("wood", "dirt"):
+                        self.inventory[material_found] = current_qty + 1
+                        self.logger.info(f"EXTRAÍDO 1 de {material_found}. Total: {self.inventory[material_found]}/{required_qty}")
+                # Si es mineral (ej. diamond_ore) y se encuentra, siempre se cuenta.
+                elif material_found not in ("wood", "dirt") and required_qty > current_qty:
+                     self.inventory[material_found] = current_qty + 1
+                     self.logger.info(f"EXTRAÍDO 1 de {material_found}. Total: {self.inventory[material_found]}/{required_qty}")
                 else:
                     self.logger.debug(f"Material {material_found} ya cumplido o no requerido. Bloque desechado.")
             else:
