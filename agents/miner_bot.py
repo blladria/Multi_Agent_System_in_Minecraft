@@ -141,7 +141,8 @@ class MinerBot(BaseAgent):
                 await self._complete_mining_cycle() 
                 self.state = AgentState.IDLE 
             else:
-                 # NEW LOGIC: Always check for strategy shift if still mining.
+                 # FIX CRÍTICO: Re-evaluar estrategia CADA ciclo si aún se está minando.
+                 # Esto asegura el cambio de Vertical a Grid si se cumple una parte.
                  await self._select_adaptive_strategy()
                  
                  if not self.mining_sector_locked:

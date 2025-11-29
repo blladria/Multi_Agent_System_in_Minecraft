@@ -84,12 +84,12 @@ class BaseAgent(ABC):
     def _update_marker(self, new_pos: Vec3):
         """
         Mueve y actualiza el bloque marcador del agente. 
-        Se coloca 1 bloque encima de la posición base para mayor visibilidad.
+        CORRECCIÓN: Se coloca el marcador *en* la posición Y del agente (posición de pie).
         """
         # 1. Borrar el marcador antiguo
         try:
             # Asegura que las coordenadas sean enteras
-            old_x, old_y, old_z = int(self.marker_position.x), int(self.marker_position.y) + 1, int(self.marker_position.z)
+            old_x, old_y, old_z = int(self.marker_position.x), int(self.marker_position.y), int(self.marker_position.z)
             self.mc.setBlock(old_x, old_y, old_z, block.AIR.id)
         except Exception:
              # Ignorar errores si no hay conexión real o si es la primera vez
@@ -100,9 +100,9 @@ class BaseAgent(ABC):
         self.marker_position.y = new_pos.y
         self.marker_position.z = new_pos.z
         
-        # 3. Colocar el nuevo marcador (1 bloque encima de la base)
-        # Se convierte a int y se sube 1 bloque
-        new_x, new_y, new_z = int(new_pos.x), int(new_pos.y) + 1, int(new_pos.z)
+        # 3. Colocar el nuevo marcador
+        # Se convierte a int
+        new_x, new_y, new_z = int(new_pos.x), int(new_pos.y), int(new_pos.z)
         try:
             self.mc.setBlock(new_x, new_y, new_z, self.marker_block_id, self.marker_block_data)
         except Exception as e:
@@ -111,8 +111,8 @@ class BaseAgent(ABC):
     def _clear_marker(self):
         """Borra el bloque marcador de su posición actual."""
         try:
-            # Borra el bloque en la posición (Y + 1)
-            x, y, z = int(self.marker_position.x), int(self.marker_position.y) + 1, int(self.marker_position.z)
+            # Borra el bloque en la posición (Y)
+            x, y, z = int(self.marker_position.x), int(self.marker_position.y), int(self.marker_position.z)
             self.mc.setBlock(x, y, z, block.AIR.id)
         except Exception:
              pass

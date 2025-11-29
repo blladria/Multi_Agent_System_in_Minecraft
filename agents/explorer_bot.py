@@ -54,8 +54,8 @@ class ExplorerBot(BaseAgent):
                 
                 # Intentar actualizar la altura del marcador a la altura actual del terreno
                 try:
-                    # FIX: Asegura que solo se pasen enteros al mc.getHeight()
-                    scan_pos.y = self.mc.getHeight(int(scan_pos.x), int(scan_pos.z)) 
+                    # FIX CRÍTICO: Asegura que la posición Y sea la altura del bloque superior + 1 (donde está de pie el agente/marcador)
+                    scan_pos.y = self.mc.getHeight(int(scan_pos.x), int(scan_pos.z)) + 1 
                 except Exception:
                     pass 
                     
@@ -98,8 +98,8 @@ class ExplorerBot(BaseAgent):
                 if arg.startswith('range='):
                     self.exploration_range = int(arg.split('=')[1])
                     
-            # Obtiene la altura actual del terreno para establecer la posición inicial
-            self.target_position = Vec3(x, self.mc.getHeight(x, z), z)
+            # Obtiene la altura actual del terreno y añade +1 para la posición de pie/marcador
+            self.target_position = Vec3(x, self.mc.getHeight(x, z) + 1, z)
             self.logger.info(f"Parametros de exploracion cargados: Centro=({x}, {z}), Rango={self.exploration_range}")
             
             if self.is_exploring:
@@ -128,6 +128,7 @@ class ExplorerBot(BaseAgent):
         """
         self.logger.info("Escaneando el terreno (ANALISIS FUNCIONAL)...")
         
+        # FIX: Restar 1 a la posición del agente para obtener el nivel de la superficie (grass/dirt)
         start_x, start_z = int(self.target_position.x), int(self.target_position.z)
         half_range = self.exploration_range // 2
         

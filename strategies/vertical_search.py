@@ -21,13 +21,15 @@ class VerticalSearchStrategy(BaseMiningStrategy):
         # 1. Minar 3 bloques: el actual y dos debajo (Y, Y-1, Y-2)
         for i in range(volume):
             mine_pos = position.clone()
-            mine_pos.y -= i 
+            # Posición de minería relativa al agente.
+            # El agente se posiciona en Y=getHeight+1, así que minamos en [Y-1] (la superficie) y [Y-2] y [Y-3]
+            mine_pos.y -= (i + 1)
             
             await mine_block_callback(mine_pos)
             await asyncio.sleep(0.3) 
         
         # 2. Lógica de Movimiento: Vertical o Horizontal (si se toca fondo)
-        if position.y > self.MIN_SAFE_Y:
+        if position.y > (self.MIN_SAFE_Y + 1): # +1 para compensar que el agente está de pie en Y+1
             position.y -= 1 
             self.logger.debug(f"Agente se mueve a Y={position.y} para el siguiente ciclo.")
         else:
@@ -41,7 +43,7 @@ class VerticalSearchStrategy(BaseMiningStrategy):
                 # mc.getHeight devuelve el bloque sólido más alto.
                 new_y = self.mc.getHeight(int(position.x), int(position.z))
                 # Posiciona el minero en ese bloque sólido para que el marcador (Y+1) esté a ras.
-                position.y = max(new_y, self.RESTART_Y)
+                position.y = max(new_y + 1, self.RESTART_Y)
             except Exception:
                  position.y = self.RESTART_Y
             

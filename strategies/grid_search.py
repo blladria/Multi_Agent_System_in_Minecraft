@@ -8,8 +8,6 @@ from .base_strategy import BaseMiningStrategy
 class GridSearchStrategy(BaseMiningStrategy):
     """
     Estrategia de Búsqueda en Rejilla (Adaptada para minería de Superficie: Dirt/Grass).
-    CORRECCIÓN: Se ancla la posición Y de minería a un nivel fijo para asegurar
-    la extracción horizontal de la capa superficial (Grass/Dirt).
     """
     def __init__(self, mc_connection, logger):
         super().__init__(mc_connection, logger)
@@ -28,7 +26,7 @@ class GridSearchStrategy(BaseMiningStrategy):
         if self.start_x is None:
             self.start_x = int(position.x)
             self.start_z = int(position.z)
-            # Fija el nivel Y para la minería a la altura de la superficie inicial - 1 (para asegurar DIRT).
+            # Fija el nivel Y de minería a la altura de la superficie inicial - 1 (para asegurar DIRT).
             initial_surface_y = self.mc.getHeight(self.start_x, self.start_z)
             self.mining_y_level = initial_surface_y - 1
             # Para evitar minar en el aire, si la superficie es baja, minar el bloque de la superficie.
@@ -46,37 +44,32 @@ class GridSearchStrategy(BaseMiningStrategy):
         x_target = self.start_x + self.search_x
         z_target = self.start_z + self.search_z
         
-        # 3. La posición Y del agente (marcador) sigue la altura real de la superficie
-        # (Necesario para que el marcador sea visible)
-        marker_y = self.mc.getHeight(x_target, z_target)
+        # 3. Actualizar la posición del agente (marcador)
+        marker_y = self.mc.getHeight(x_target, z_target) + 1 # Altura de pie
         position.x = x_target
         position.z = z_target
         position.y = marker_y 
 
         # --- Lógica de Minería Adaptativa ---
         
-        # Solo se prioriza la búsqueda de 'dirt'.
-        if 'dirt' in requirements and requirements['dirt'] > 0:
+        # Si la DIRT sigue siendo un requisito pendiente, MINAMOS
+        dirt_needed = requirements.get('dirt', 0) - inventory.get('dirt', 0)
+        
+        if dirt_needed > 0:
             self.logger.debug(f"Estrategia: Grid/Superficie (Mina horizontal) en ({x_target}, {self.mining_y_level}, {z_target}).")
             
-            # 4. Minar DOS bloques en la misma columna para capturar GRASS y DIRT
-            mine_pos_1 = Vec3(x_target, self.mining_y_level + 1, z_target) # La capa de arriba (Grass/Dirt)
-            mine_pos_2 = Vec3(x_target, self.mining_y_level, z_target)     # La capa de minería principal (Dirt/Stone)
+            # Minar DOS bloques: el que está en la altura de la superficie (GRASS/DIRT) y el de abajo (DIRT)
+            mine_pos_top = Vec3(x_target, position.y - 1, z_target) 
+            mine_pos_bottom = Vec3(x_target, position.y - 2, z_target) 
 
-            await mine_block_callback(mine_pos_1)
-            await mine_block_callback(mine_pos_2) 
+            # Minar la capa superior
+            await mine_block_callback(mine_pos_top)
+            # Minar la capa debajo
+            await mine_block_callback(mine_pos_bottom) 
             
             await asyncio.sleep(0.2)
                 
         else:
-            self.logger.debug("Estrategia: Grid/General. (Minado en área cúbica por defecto).")
-            
-            # Comportamiento Grid por defecto (minar 3 capas)
-            current_surface_y = self.mc.getHeight(x_target, z_target)
-            volume = 3
-            for i in range(volume):
-                mine_pos = Vec3(x_target, current_surface_y - i, z_target)
-                await mine_block_callback(mine_pos)
-                await asyncio.sleep(0.2) 
-        
-        await asyncio.sleep(0.1)
+            self.logger.debug("Estrategia: Grid/General. (Material no requerido o completado).")
+            # Si se acaba la tierra, simplemente avanza para terminar el ciclo y forzar la re-selección de estrategia.
+            await asyncio.sleep(0.1)
