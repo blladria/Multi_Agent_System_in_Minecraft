@@ -10,22 +10,22 @@ from mcpi.vec3 import Vec3
 # Diccionario de plantillas de construcción simuladas
 BUILDING_TEMPLATES = {
     "shelter_basic": {
-        # Materiales OBTENIBLES: Madera (logs sin refinar) y Tierra.
-        "materials": {"wood": 30, "dirt": 60}, 
+        # Materiales OBTENIBLES: Piedra y Tierra. (Actualizado: No usa wood)
+        "materials": {"stone": 30, "dirt": 60}, 
         "size": (5, 3, 5), # (x, y, z)
-        "description": "Un refugio simple de 5x3x5 hecho de madera sin refinar y tierra."
+        "description": "Un refugio simple de 5x3x5 hecho de piedra y tierra."
     },
     "house_basic": {
-        # Se reemplazan wood_planks, stone, glass_pane, door_wood por wood y dirt
-        "materials": {"wood": 60, "dirt": 60}, 
+        # Se reemplazan wood_planks, stone, glass_pane, door_wood por stone y dirt
+        "materials": {"stone": 60, "dirt": 60}, 
         "size": (5, 6, 5), # (x, y, z)
-        "description": "Una casa basica de 5x6x5 con techo y puerta (solo materiales basicos)"
+        "description": "Una casa basica de 5x6x5 con techo y puerta (solo materiales basicos: piedra y tierra)"
     },
     "tower_watch": {
-        # Reemplazar stone/cobblestone por dirt
-        "materials": {"dirt": 128, "wood": 16},
+        # Reemplazar wood por stone
+        "materials": {"dirt": 128, "stone": 16},
         "size": (3, 10, 3),
-        "description": "Una torre de vigilancia de 3x10x3 de tierra y madera"
+        "description": "Una torre de vigilancia de 3x10x3 de tierra y piedra"
     },
     # --- PLANTILLA DE PRUEBA (CONSTRUCCIÓN SÓLIDA DE PIEDRA/TIERRA) ---
     "test_mining": {
@@ -219,14 +219,14 @@ class BuilderBot(BaseAgent):
         x1 = x0 + size_x - 1
         z1 = z0 + size_z - 1
         
-        # 2. Lógica de Materiales por defecto (para planes no 'house_basic')
+        # 2. Lógica de Materiales por defecto
         required_materials_keys = list(self.current_plan["materials"].keys())
         
         # Obtener material por defecto para la capa. Si falla, usa el primer material del BOM.
         material_key_lower = required_materials_keys[self.build_step % len(required_materials_keys)]
         
         # Lógica de mapeo para obtener el ID de bloque
-        # Ahora solo se espera 'wood' (ID 17), 'dirt' (ID 3) o 'stone' (ID 1)
+        # Ahora solo se espera 'stone' (ID 1) o 'dirt' (ID 3)
         mat_id = block.DIRT.id 
         if material_key_lower == 'wood':
              mat_id = block.WOOD.id # ID 17 (Log de madera sin refinar)
@@ -242,10 +242,10 @@ class BuilderBot(BaseAgent):
         
         if self.current_plan["description"].startswith("Una casa basica"):
             
-            # CAPA 0: Piso (Ahora de WOOD)
+            # CAPA 0: Piso (Ahora de STONE)
             if self.build_step == 0:
-                material_key_lower = "wood"
-                mat_id = block.WOOD.id # ID 17
+                material_key_lower = "stone"
+                mat_id = block.STONE.id # ID 1
                 blocks_to_place = size_x * size_z # 25
                 self.mc.setBlocks(x0, current_y, z0, x1, current_y, z1, mat_id)
                 self.logger.info(f"Construyendo: Piso ({blocks_to_place} bloques de {material_key_lower}).")
@@ -293,17 +293,14 @@ class BuilderBot(BaseAgent):
                     door_pos_z = mid_z 
                     self.mc.setBlock(door_pos_x, current_y, door_pos_z, block.AIR.id)
                     
-                # Si el bloque colocado es AIR, ajustamos el conteo de bloques a consumir
-                # Consideramos que los bloques reemplazados (puerta/ventana) consumen el material base (dirt)
-                
                 # Para evitar errores de consumo negativo, restablecemos el material a consumir
                 blocks_to_place = 16 
 
 
-            # CAPA 5: Techo (Ahora de WOOD)
+            # CAPA 5: Techo (Ahora de STONE)
             elif self.build_step == 5:
-                material_key_lower = "wood"
-                mat_id = block.WOOD.id # ID 17
+                material_key_lower = "stone"
+                mat_id = block.STONE.id # ID 1
                 blocks_to_place = size_x * size_z # 25
                 self.mc.setBlocks(x0, current_y, z0, x1, current_y, z1, mat_id)
                 self.logger.info(f"Construyendo: Techo ({blocks_to_place} bloques de {material_key_lower}).")
@@ -325,7 +322,7 @@ class BuilderBot(BaseAgent):
             
             # Se usa el material por defecto para la capa (ciclado entre dirt y stone, en tu caso)
             
-            if material_key_lower == 'wood':
+            if material_key_lower == 'wood': # Se mantiene por compatibilidad, aunque no se usa
                  mat_id = block.WOOD.id
             elif material_key_lower == 'stone':
                  mat_id = block.STONE.id

@@ -87,13 +87,13 @@ class MinerBot(BaseAgent):
         if current_block_id == block.AIR.id:
             return False
 
-        # 1. Identificar material requerido (LÓGICA MEJORADA PARA GRASS/DIRT/WOOD/LEAVES)
+        # 1. Identificar material requerido (LÓGICA MEJORADA PARA GRASS/DIRT/STONE)
         material_found = None
         
         if "dirt" in self.requirements and (current_block_id == block.DIRT.id or current_block_id == block.GRASS.id):
             material_found = "dirt" # Grass counts as dirt
         elif "wood" in self.requirements and (current_block_id == block.WOOD.id or current_block_id == block.LEAVES.id):
-             material_found = "wood" # Leaves/Wood count as wood
+             material_found = "wood" # Leaves/Wood count as wood (mantenido por si se pide manualmente)
         else:
              # Comprobar materiales específicos (piedra, minerales, etc.)
              for name, id in MATERIAL_MAP.items():
@@ -111,12 +111,12 @@ class MinerBot(BaseAgent):
                 current_qty = self.inventory.get(material_found, 0)
 
                 if required_qty > 0 and current_qty < required_qty:
-                    # Solo se cuenta si es wood o dirt (los materiales del BuilderBot)
-                    if material_found in ("wood", "dirt"):
+                    # Solo se cuenta si es stone o dirt (los materiales principales del BuilderBot)
+                    if material_found in ("stone", "dirt"):
                         self.inventory[material_found] = current_qty + 1
                         self.logger.info(f"EXTRAÍDO 1 de {material_found}. Total: {self.inventory[material_found]}/{required_qty}")
                 # Si es mineral (ej. diamond_ore) y se encuentra, siempre se cuenta.
-                elif material_found not in ("wood", "dirt") and required_qty > current_qty:
+                elif material_found not in ("stone", "dirt", "wood") and required_qty > current_qty:
                      self.inventory[material_found] = current_qty + 1
                      self.logger.info(f"EXTRAÍDO 1 de {material_found}. Total: {self.inventory[material_found]}/{required_qty}")
                 else:
@@ -209,7 +209,7 @@ class MinerBot(BaseAgent):
     async def _select_adaptive_strategy(self):
         """
         Selecciona la estrategia de minería más adecuada basada en el material más requerido.
-        Usa Grid para superficie (Wood/Dirt) y Vertical/Vein para profundidad.
+        Usa Grid para superficie (Dirt) y Vertical/Vein para profundidad (Stone/Minerales).
         """
         if not self.requirements:
             new_strategy_name = "vertical" 
@@ -224,8 +224,8 @@ class MinerBot(BaseAgent):
         most_needed_material = max(remaining_requirements, key=remaining_requirements.get)
 
         # 2. Asignación de Estrategia
-        if "wood" in remaining_requirements or "dirt" in remaining_requirements:
-            # Grid Search para minería de superficie (Tala y Tierra)
+        if "dirt" in remaining_requirements: # Grid para tierra
+            # Grid Search para minería de superficie (Tierra)
             new_strategy_name = "grid"
         elif most_needed_material in ("diamond_ore", "iron_ore", "gold_ore", "lapis_lazuli_ore", "redstone_ore"):
              # Vein Search para minerales concentrados

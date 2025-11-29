@@ -58,8 +58,8 @@ MATERIALS_REQUIREMENTS_SCHEMA = dict(BASE_SCHEMA, **{
                 # Se espera un nombre de material (string) y una cantidad (integer)
                 "^.*$": {"type": "integer", "minimum": 1}
             },
-            # CORRECCIÓN CLAVE: Ahora se requiere 'wood' y 'dirt'
-            "required": ["wood", "dirt"], 
+            # REQUISITO ACTUALIZADO: Ahora se requiere 'stone' y 'dirt' (No se usa 'wood')
+            "required": ["stone", "dirt"], 
             "additionalProperties": True
         }
     })
@@ -171,7 +171,7 @@ if __name__ == "__main__":
         "target": "MinerBot",
         "timestamp": "2025-10-21T15:30:00Z",
         "payload": {
-            "wood": 50,
+            "stone": 50,
             "dirt": 100,
         },
         "status": "PENDING",
