@@ -14,7 +14,7 @@ import logging # AÑADIDO: Importar el módulo logging
 # Importamos la función de configuración de logging desde AgentManager
 from core.agent_manager import setup_system_logging
 
-# --- FIXTURES y MOCKS (Mantener el código actual) ---
+# --- FIXTURES y MOCKS (CORREGIDO) ---
 
 @pytest.fixture
 def mock_mc():
@@ -22,6 +22,21 @@ def mock_mc():
     mc = MagicMock()
     mc.getHeight.return_value = 65 
     mc.postToChat.return_value = None
+    
+    # CORRECCIÓN CRÍTICA: Mockear mc.player.getTilePos() para devolver un Vec3 con enteros
+    # Esto asegura que MinerBot.mining_position se inicialice con números.
+    mock_player = MagicMock()
+    mock_player.getTilePos.return_value = Vec3(50, 70, 50) 
+    mc.player = mock_player
+    
+    # Mockear setBlock/setBlocks para evitar errores durante la ejecución de las estrategias
+    mc.setBlock.return_value = None
+    mc.setBlocks.return_value = None
+
+    # Mockear getBlock para simular que hay un bloque genérico para minar (e.g., ID 1)
+    # Esto asegura que _mine_current_block no falle.
+    mc.getBlock.return_value = 1 
+
     return mc
 
 @pytest.fixture
@@ -69,16 +84,19 @@ async def test_miner_lock_release_on_stop(setup_synchronization_agents):
         # 1. Lanzar ciclos asíncronos de los agentes (Miner inicia en IDLE)
         agent_tasks['miner'] = asyncio.create_task(miner.run_cycle())
         
-        await asyncio.sleep(0.5) # Aumentar el buffer de inicio
+        # Espera para que el ciclo de run_cycle se inicie (y MinerBot esté en IDLE)
+        await asyncio.sleep(0.5) 
         
         # Poner requisitos y forzar la transición a RUNNING
-        miner.requirements = {"stone": 100}
+        miner.requirements = {"dirt": 100} # Usamos 'dirt' que siempre se mina/simula
         miner.state = AgentState.RUNNING
 
         # Dar tiempo para que el Miner ejecute decide() y adquiera el lock
-        await asyncio.sleep(1.0) # Más tiempo para adquirir el lock
+        # y ejecute el primer ciclo de act()
+        await asyncio.sleep(1.5) # Más tiempo para que complete una iteración de minería
         
-        # Verificación 1.1: El lock debe estar adquirido
+        # Verificación 1.1: El lock debe estar adquirido después de decide() y antes de act()
+        # La lógica de decide() pone el lock al ver que no está cumplido y no está lockeado
         assert miner.mining_sector_locked is True
         
         # 2. Acción: Enviar comando de STOP (esto llama a handle_stop)
@@ -93,7 +111,7 @@ async def test_miner_lock_release_on_stop(setup_synchronization_agents):
         await broker.publish(stop_command)
         
         # Dar tiempo para que el agente procese el mensaje y haga la transición
-        await asyncio.sleep(1.5) # TIEMPO MÁS SEGURO (1.5s) para la transición a STOPPED
+        await asyncio.sleep(1.0) 
         
         # 3. Verificación Final
         assert miner.state == AgentState.STOPPED
@@ -103,7 +121,8 @@ async def test_miner_lock_release_on_stop(setup_synchronization_agents):
     finally:
         # Limpieza: Cancelar todas las tareas al finalizar la prueba
         for task in agent_tasks.values():
-            task.cancel()
+            if not task.done():
+                task.cancel()
         await asyncio.gather(*agent_tasks.values(), return_exceptions=True)
 
 
@@ -122,8 +141,8 @@ async def test_builder_waits_for_materials(setup_synchronization_agents):
         await asyncio.sleep(0.5) # Tiempo incrementado para inicialización
 
         # 2. Preparación: Definir requisitos y un inventario insuficiente
-        builder.required_bom = {"WOOD_PLANKS": 50, "STONE": 10}
-        builder.current_inventory = {"WOOD_PLANKS": 5} # Insuficiente
+        builder.required_bom = {"wood": 50, "dirt": 10}
+        builder.current_inventory = {"wood": 5} # Insuficiente
         
         # 3. Acción: Simular el comando /builder build
         build_command = {
@@ -147,5 +166,6 @@ async def test_builder_waits_for_materials(setup_synchronization_agents):
     finally:
         # Limpieza: Cancelar todas las tareas al finalizar la prueba
         for task in agent_tasks.values():
-            task.cancel()
+            if not task.done():
+                task.cancel()
         await asyncio.gather(*agent_tasks.values(), return_exceptions=True)
