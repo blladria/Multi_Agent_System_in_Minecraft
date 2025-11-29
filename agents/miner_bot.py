@@ -38,7 +38,6 @@ class MinerBot(BaseAgent):
         self.inventory: Dict[str, int] = {mat: 0 for mat in MATERIAL_MAP.keys()}
         
         # --- POSICIÓN INICIAL DE TRABAJO PREDETERMINADA (Y visible) ---
-        # Se inicializa en (10, 65, 10). Esta posición será sobrescrita por el BuilderBot.
         self.mining_position: Vec3 = Vec3(10, 65, 10)
         # ---------------------------------------------
             
@@ -165,6 +164,11 @@ class MinerBot(BaseAgent):
             # 3. Actualizamos el marcador en la posición visible de la superficie.
             marker_position_visible = Vec3(x_working, display_y, z_working)
             self._update_marker(marker_position_visible) 
+            
+            # 4. Actualizamos la Y de la posición de minería interna a la superficie
+            #    cuando es VerticalSearch y ha tocado fondo, esto se reinicia en el siguiente act.
+            if self.current_strategy_name == "vertical" and self.mining_position.y < VerticalSearchStrategy.MIN_SAFE_Y:
+                 self.mining_position.y = display_y # Reinicia la Y al nivel de la superficie (según el marker_position_visible)
             
             # Continúa con la ejecución de la estrategia
             await self.current_strategy_instance.execute(
