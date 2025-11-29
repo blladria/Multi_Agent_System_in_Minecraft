@@ -171,7 +171,14 @@ class BuilderBot(BaseAgent):
         return is_sufficient
 
     async def _publish_materials_requirements(self):
-        """Publica el mensaje materials.requirements.v1 a MinerBot."""
+        """
+        Publica el mensaje materials.requirements.v1 a MinerBot, incluyendo
+        las coordenadas de la zona de trabajo.
+        """
+        
+        # OBTENEMOS LAS COORDENADAS PARA INCLUIRLAS EN EL CONTEXTO
+        target_zone_data = self.terrain_data.get("optimal_zone", {}).get("center", {})
+        
         bom_message = {
             "type": "materials.requirements.v1",
             "source": self.agent_id,
@@ -179,7 +186,11 @@ class BuilderBot(BaseAgent):
             "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "payload": self.required_bom,
             "status": "PENDING",
-            "context": {"plan_name": self.current_plan["description"]}
+            "context": {
+                "plan_name": self.current_plan["description"],
+                # --- AÑADIDO: COORDENADAS DE LA ZONA OPTIMA ---
+                "target_zone": target_zone_data 
+            }
         }
         await self.broker.publish(bom_message)
         self.logger.info(f"BOM publicado a MinerBot. Materiales requeridos: {self.required_bom}")

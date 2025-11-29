@@ -37,12 +37,11 @@ class MinerBot(BaseAgent):
         self.requirements: Dict[str, int] = {}
         self.inventory: Dict[str, int] = {mat: 0 for mat in MATERIAL_MAP.keys()}
         
-        try:
-            player_pos = self.mc.player.getTilePos()
-            # Posición inicial de minería profunda
-            self.mining_position: Vec3 = Vec3(player_pos.x + 10, 60, player_pos.z + 10)
-        except Exception:
-            self.mining_position: Vec3 = Vec3(10, 60, 10)
+        # --- POSICIÓN INICIAL DE TRABAJO PREDETERMINADA (Y visible) ---
+        # Se inicializa en (10, 65, 10). Esta posición será sobrescrita por el BuilderBot
+        # tan pronto como reciba los requisitos de materiales.
+        self.mining_position: Vec3 = Vec3(10, 65, 10)
+        # ---------------------------------------------
             
         self.mining_sector_locked = False 
         
@@ -144,7 +143,6 @@ class MinerBot(BaseAgent):
                 self.state = AgentState.IDLE 
             else:
                  # FIX CRÍTICO: Re-evaluar estrategia CADA ciclo si aún se está minando.
-                 # Esto asegura el cambio de Vertical a Grid si se cumple una parte del BOM.
                  await self._select_adaptive_strategy()
                  
                  if not self.mining_sector_locked:
@@ -153,7 +151,6 @@ class MinerBot(BaseAgent):
     async def act(self):
         if self.state == AgentState.RUNNING and self.mining_sector_locked:
             
-            # --- CORRECCIÓN: VISUALIZACIÓN DEL MARCADOR EN LA SUPERFICIE ---
             # 1. Usamos el X/Z de la posición de minería (el pozo actual).
             x_working = int(self.mining_position.x)
             z_working = int(self.mining_position.z)
@@ -166,15 +163,9 @@ class MinerBot(BaseAgent):
                  # Fallback si falla getHeight o conexión a MC.
                  display_y = 70 
                  
-            marker_position_visible = Vec3(x_working, display_y, z_working)
-            
             # 3. Actualizamos el marcador en la posición visible de la superficie.
+            marker_position_visible = Vec3(x_working, display_y, z_working)
             self._update_marker(marker_position_visible) 
-            # ----------------------------------------------------------------------
-            
-            ### MODIFICACIÓN CLAVE DE DEBUG ###
-            # Publicar la posición en el chat de Minecraft
-            self.mc.postToChat(f"MinerBot: Activo en X:{x_working}, Z:{z_working} (Trabajando en Y:{int(self.mining_position.y)})")
             
             # Continúa con la ejecución de la estrategia
             await self.current_strategy_instance.execute(
@@ -217,6 +208,27 @@ class MinerBot(BaseAgent):
         elif msg_type == "materials.requirements.v1":
             self.requirements = payload
             self.logger.info(f"Requisitos de materiales recibidos: {self.requirements}")
+            
+            # --- MODIFICACION: LEER COORDENADAS DE TRABAJO DEL CONTEXTO ---
+            target_zone = message.get("context", {}).get("target_zone")
+            if target_zone and all(key in target_zone for key in ['x', 'z']):
+                 x = target_zone['x']
+                 z = target_zone['z']
+                 
+                 try:
+                     # 1. Obtener la altura real de la superficie en las nuevas coordenadas
+                     y_surface = self.mc.getHeight(int(x), int(z))
+                     # 2. Establecer la Y del bot a una posición de superficie visible + 1
+                     self.mining_position.y = max(self.mining_position.y, y_surface + 1)
+                 except Exception:
+                     # Fallback si la conexión falla al obtener altura
+                     self.mining_position.y = 65 
+                     
+                 # 3. Actualizar X y Z a las coordenadas de trabajo
+                 self.mining_position.x = x
+                 self.mining_position.z = z
+                 self.logger.info(f"Posicion de mineria reajustada al centro de construccion: ({self.mining_position.x}, {self.mining_position.y}, {self.mining_position.z})")
+            # -------------------------------------------------------------
             
             await self._select_adaptive_strategy()
             
@@ -294,7 +306,6 @@ class MinerBot(BaseAgent):
                 self.logger.info(f"Estrategia de mineria adaptada a: {new_strategy_name}")
                 
                 # FIX 2b: Reset position and strategy state when switching to Grid from Vertical/Vein
-                # Esto es CRÍTICO para asegurar que el bot no intente minar la superficie a Y=5.
                 if new_strategy_name == "grid":
                      self.mining_position.x = 10 # Reset X
                      self.mining_position.z = 10 # Reset Z
