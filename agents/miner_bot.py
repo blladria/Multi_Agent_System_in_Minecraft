@@ -197,6 +197,11 @@ class MinerBot(BaseAgent):
         if msg_type.startswith("command."):
             command = payload.get("command_name")
             if command == 'start' or command == 'fulfill':
+                # --- CORRECCIÓN: Leer parámetros antes de iniciar ---
+                params = payload.get("parameters", {})
+                self._parse_start_params(params)
+                # ----------------------------------------------------
+                
                 await self._select_adaptive_strategy() 
                 
                 if not self._check_requirements_fulfilled():
@@ -244,6 +249,54 @@ class MinerBot(BaseAgent):
             
             if self.state == AgentState.IDLE: 
                 self.state = AgentState.RUNNING
+
+
+    def _parse_start_params(self, params: Dict[str, Any]):
+        """
+        CORRECCIÓN: Actualiza la posición de minería basada en argumentos o posición del jugador.
+        """
+        args = params.get('args', [])
+        
+        # Variables temporales para las nuevas coordenadas
+        new_x, new_z = None, None
+        
+        # 1. Intentar leer coordenadas del comando (ej: /miner start x=20 z=40)
+        for arg in args:
+            if arg.startswith('x='):
+                try: new_x = int(arg.split('=')[1])
+                except: pass
+            elif arg.startswith('z='):
+                try: new_z = int(arg.split('=')[1])
+                except: pass
+
+        # 2. Si no se dieron coordenadas, USAR LA POSICIÓN DEL JUGADOR
+        if new_x is None or new_z is None:
+            try:
+                # Obtiene la posición del bloque donde está el jugador (TilePos)
+                player_pos = self.mc.player.getTilePos()
+                new_x = player_pos.x
+                new_z = player_pos.z
+                self.logger.info(f"Coordenadas no especificadas. Usando posición del jugador: {new_x}, {new_z}")
+            except Exception as e:
+                self.logger.warning(f"No se pudo obtener posición del jugador: {e}. Manteniendo posición anterior.")
+                return # Mantiene la posición actual si falla
+
+        # 3. Aplicar y actualizar altura (Y)
+        if new_x is not None and new_z is not None:
+            self.mining_position.x = new_x
+            self.mining_position.z = new_z
+            try:
+                # Calcular la Y de la superficie en la nueva posición
+                self.mining_position.y = self.mc.getHeight(new_x, new_z) + 1
+            except:
+                self.mining_position.y = 65
+
+            self.logger.info(f"MinerBot reubicado en: {self.mining_position.x}, {self.mining_position.y}, {self.mining_position.z}")
+            
+            # 4. Reiniciar estrategia para limpiar estados anteriores (ej: anclajes de GridSearch)
+            StrategyClass = self.strategy_classes.get(self.current_strategy_name)
+            if StrategyClass:
+                self.current_strategy_instance = StrategyClass(self.mc, self.logger)
 
 
     def _parse_set_strategy(self, params: Dict[str, Any]):
