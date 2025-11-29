@@ -58,7 +58,7 @@ class GridSearchStrategy(BaseMiningStrategy):
                     lowest_tree_y = y_check 
                     break 
                 
-                # Si encontramos aire o un bloque que NO es aire ni árbol, detenemos la búsqueda.
+                # Si encontramos un bloque que NO es aire ni árbol, detenemos la búsqueda.
                 if block_at_pos != block.AIR.id:
                      lowest_tree_y = -1
                      break
@@ -67,39 +67,59 @@ class GridSearchStrategy(BaseMiningStrategy):
             if lowest_tree_y != -1:
                 self.logger.info(f"Árbol encontrado. Iniciando tala vertical desde Y={lowest_tree_y}.")
                 
-                # 3. Minar la columna, permitiendo huecos (aire)
-                # Iteramos hasta una altura máxima para asegurar que se talan todas las hojas.
-                for y_mine in range(lowest_tree_y, lowest_tree_y + 20): 
+                # --- FASE 3: LÓGICA DE TALA SEGÚN REGLA DEL USUARIO (Madera->Hoja) ---
+                y_mine = lowest_tree_y
+                is_log_column_finished = False
+                
+                # Iteramos hacia arriba con un margen de seguridad (ej. 20 bloques)
+                for _ in range(20):
                     mine_pos = Vec3(x_target, y_mine, z_target)
                     
                     try:
                         block_to_mine_id = self.mc.getBlock(x_target, y_mine, z_target)
                     except Exception:
-                        continue 
+                        break # Error de conexión o API
 
-                    # Si es un bloque de árbol, lo minamos.
-                    if block_to_mine_id == self.WOOD_BLOCK_ID or block_to_mine_id == self.LEAVES_BLOCK_ID:
+                    if block_to_mine_id == self.WOOD_BLOCK_ID:
+                        # Regla: Pica el tronco y sigue subiendo para buscar el siguiente
                         await mine_block_callback(mine_pos)
+                        is_log_column_finished = False
                     
-                    await asyncio.sleep(0.1) # Pausa breve entre picos
+                    elif block_to_mine_id == self.LEAVES_BLOCK_ID:
+                        # Regla: Pica la hoja. Si ya picamos el tronco, esta hoja marca el final de esa rama.
+                        await mine_block_callback(mine_pos)
+                        is_log_column_finished = True
+                        
+                    elif block_to_mine_id == block.AIR.id:
+                        # Si encontramos aire y la columna de logs ya terminó (is_log_column_finished), salimos.
+                        # Esto permite picar hojas con huecos debajo.
+                        if is_log_column_finished:
+                            break
+                        # Si no ha terminado, seguimos subiendo para buscar más hojas/madera
+                    
+                    else:
+                        # Se encontró otro bloque (ej. piedra/agua). Paramos.
+                        break
+                    
+                    y_mine += 1
+                    await asyncio.sleep(0.1)
+                        
             else:
                  self.logger.debug("No se encontró madera. Continuando búsqueda horizontal.")
                  
         elif 'dirt' in requirements and requirements['dirt'] > 0:
             self.logger.debug("Estrategia: Grid/Superficie (Buscando DIRT).")
             
-            # 2. Minar solo las 3 capas superiores (superficiales)
-            volume = 3
-            for i in range(volume):
-                # Aseguramos minar desde la superficie hacia abajo
-                mine_pos = Vec3(x_target, current_surface_y - i, z_target)
-                await mine_block_callback(mine_pos)
-                await asyncio.sleep(0.2)
+            # 2. Minar solo la capa superior de césped/tierra.
+            # current_surface_y es el bloque de césped sobre el que está "caminando".
+            mine_pos = Vec3(x_target, current_surface_y, z_target)
+            await mine_block_callback(mine_pos)
+            await asyncio.sleep(0.2)
                 
         else:
             self.logger.debug("Estrategia: Grid/General. (Minado en área cúbica por defecto).")
             
-            # Comportamiento Grid por defecto
+            # Comportamiento Grid por defecto (minar 3 capas)
             volume = 3
             for i in range(volume):
                 mine_pos = Vec3(x_target, current_surface_y - i, z_target)
