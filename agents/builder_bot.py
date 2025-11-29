@@ -322,7 +322,7 @@ class BuilderBot(BaseAgent):
             
             # Se usa el material por defecto para la capa (ciclado entre dirt y stone, en tu caso)
             
-            if material_key_lower == 'wood': # Se mantiene por compatibilidad, aunque no se usa
+            if material_key_lower == 'wood':
                  mat_id = block.WOOD.id
             elif material_key_lower == 'stone':
                  mat_id = block.STONE.id
