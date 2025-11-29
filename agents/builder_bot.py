@@ -26,6 +26,12 @@ BUILDING_TEMPLATES = {
         "materials": {"dirt": 128, "wood": 16},
         "size": (3, 10, 3),
         "description": "Una torre de vigilancia de 3x10x3 de tierra y madera"
+    },
+    # --- PLANTILLA DE PRUEBA (CONSTRUCCIÓN SÓLIDA DE PIEDRA/TIERRA) ---
+    "test_mining": {
+        "materials": {"stone": 50, "dirt": 50}, 
+        "size": (5, 5, 5),
+        "description": "Plan de prueba para minar 50 Stone (Vertical) y 50 Dirt (Grid)."
     }
 }
 
@@ -220,13 +226,14 @@ class BuilderBot(BaseAgent):
         material_key_lower = required_materials_keys[self.build_step % len(required_materials_keys)]
         
         # Lógica de mapeo para obtener el ID de bloque
-        # Ahora solo se espera 'wood' (ID 17) o 'dirt' (ID 3)
+        # Ahora solo se espera 'wood' (ID 17), 'dirt' (ID 3) o 'stone' (ID 1)
         mat_id = block.DIRT.id 
         if material_key_lower == 'wood':
              mat_id = block.WOOD.id # ID 17 (Log de madera sin refinar)
         elif material_key_lower == 'dirt':
              mat_id = block.DIRT.id # ID 3
-        # Si no es wood ni dirt (p. ej. 'stone'), se deja en dirt para cumplir el requisito de no usar procesados
+        elif material_key_lower == 'stone':
+             mat_id = block.STONE.id # ID 1
         
         blocks_to_place = 0
         
@@ -311,19 +318,23 @@ class BuilderBot(BaseAgent):
                  self.mc.setBlocks(x0, current_y, z0, x0, current_y, z1, mat_id) # Pared X=x0
                  self.mc.setBlocks(x1, current_y, z0, x1, current_y, z1, mat_id) # Pared X=x1
         
-        # --- Lógica de Construcción de SHELTER y TOWER (Perímetro simple) ---
+        # --- Lógica de Construcción de SHELTER, TOWER y TEST (Perímetro/Cuboide simple) ---
         elif self.current_plan["description"].startswith("Un refugio simple") or \
-             self.current_plan["description"].startswith("Una torre de vigilancia"):
+             self.current_plan["description"].startswith("Una torre de vigilancia") or \
+             self.current_plan["description"].startswith("Plan de prueba"): # <-- Tu plan de prueba usa esta lógica
             
-            # Se usa el material por defecto para la capa (ciclado entre wood y dirt)
+            # Se usa el material por defecto para la capa (ciclado entre dirt y stone, en tu caso)
+            
             if material_key_lower == 'wood':
                  mat_id = block.WOOD.id
+            elif material_key_lower == 'stone':
+                 mat_id = block.STONE.id
             else:
                  mat_id = block.DIRT.id
             
             blocks_to_place = size_x * size_z # Bloques por defecto para una capa sólida
             
-            # Construir cuboide sólido para la capa actual
+            # Construir cuboide sólido para la capa actual (IGNORA PUERTAS/VENTANAS)
             self.mc.setBlocks(x0, current_y, z0, x1, current_y, z1, mat_id)
             self.logger.info(f"Construyendo: Capa genérica ({blocks_to_place} bloques de {material_key_lower}).")
 
