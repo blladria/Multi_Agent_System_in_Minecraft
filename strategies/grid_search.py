@@ -39,14 +39,14 @@ class GridSearchStrategy(BaseMiningStrategy):
         if 'wood' in requirements and requirements['wood'] > 0:
             self.logger.debug("Estrategia: Grid/Tala (Buscando WOOD).")
             
-            # CORRECCIÓN CLAVE: Empezar la búsqueda 1 bloque por encima de la superficie (current_surface_y + 1)
-            # para encontrar la base del tronco o las hojas.
-            y_check_start = current_surface_y + 1 
+            # CORRECCIÓN 1: La búsqueda de troncos debe empezar UN BLOQUE POR ENCIMA 
+            # de la superficie (current_surface_y) para encontrar el tronco o las hojas.
+            y_check_start = current_surface_y + 1
             is_tree_found = False
             y_trunk_base = y_check_start
             
             # 2. Búsqueda vertical de troncos
-            # Se usa 15 como rango máximo para buscar un tronco
+            # Buscamos la base (WOOD) en un rango de 15 bloques hacia arriba.
             for dy in range(15): 
                 y_check = y_check_start + dy
                 
@@ -55,20 +55,26 @@ class GridSearchStrategy(BaseMiningStrategy):
                 except Exception:
                     break
 
+                # Comprobamos si es un bloque de árbol (Wood o Leaves)
                 if block_at_pos == self.WOOD_BLOCK_ID:
                     is_tree_found = True
-                    # Al encontrar la madera, registramos la Y más baja para empezar a talar
-                    if y_check < y_trunk_base:
-                         y_trunk_base = y_check
+                    # La primera WOOD que encontramos subiendo es la base del tronco
+                    y_trunk_base = y_check 
+                    break # Encontramos la base, detenemos la búsqueda de base.
+                elif block_at_pos == self.LEAVES_BLOCK_ID:
+                    is_tree_found = True # Encontró hojas, es un árbol.
+                elif block_at_pos == block.AIR.id and is_tree_found:
+                    # Si ya encontramos parte del árbol (is_tree_found), y ahora es aire, paramos la búsqueda de la base.
                     break
-                elif block_at_pos == block.AIR.id:
-                    # Si encontramos aire antes de madera, no hay árbol aquí
+                elif block_at_pos == block.AIR.id and not is_tree_found:
+                    # Si encontramos aire y aún no hay rastro de árbol, no hay árbol aquí.
                     break
 
             if is_tree_found:
                 self.logger.info(f"Árbol encontrado. Iniciando tala vertical desde Y={y_trunk_base}.")
                 
                 # 3. Tala la columna desde la base hacia arriba
+                # Intentamos minar hasta 15 bloques por encima de la base, asegurando la destrucción de hojas y troncos.
                 for y_mine in range(y_trunk_base, y_trunk_base + 15):
                     mine_pos = Vec3(x_target, y_mine, z_target)
                     
@@ -77,13 +83,14 @@ class GridSearchStrategy(BaseMiningStrategy):
                     except Exception:
                         break
 
-                    # Detener la tala si se golpea el aire o ya se picó
-                    if block_to_mine_id == block.AIR.id:
-                        break 
-                    
                     # Asegurar que solo minamos madera o hojas (lo que mapea a "wood" en miner_bot)
                     if block_to_mine_id == self.WOOD_BLOCK_ID or block_to_mine_id == self.LEAVES_BLOCK_ID:
                         await mine_block_callback(mine_pos)
+                    
+                    # CORRECCIÓN 2 (CRÍTICA): Se elimina la ruptura por aire.
+                    # El bucle debe continuar, permitiendo romper hojas/madera más arriba.
+                    # if block_to_mine_id == block.AIR.id:
+                    #     break 
                     
                     await asyncio.sleep(0.1)
             else:
