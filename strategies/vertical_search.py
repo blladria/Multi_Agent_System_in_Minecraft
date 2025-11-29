@@ -21,8 +21,7 @@ class VerticalSearchStrategy(BaseMiningStrategy):
         # 1. Minar 3 bloques: el actual y dos debajo (Y, Y-1, Y-2)
         for i in range(volume):
             mine_pos = position.clone()
-            # Posición de minería relativa al agente.
-            # El agente se posiciona en Y=getHeight+1, así que minamos en [Y-1] (la superficie) y [Y-2] y [Y-3]
+            # Patrón de minería: El agente está en Y=getHeight+1, así que minamos en [Y-1] (la superficie) y [Y-2] y [Y-3]
             mine_pos.y -= (i + 1)
             
             await mine_block_callback(mine_pos)

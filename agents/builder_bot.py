@@ -200,7 +200,7 @@ class BuilderBot(BaseAgent):
         if not self.construction_position:
             # Inicializa la posición de construcción si no está definida
             zone = self.terrain_data.get('optimal_zone', {}).get('center', {})
-            # Asume que 'y_avg' es la altura de la base. Construimos 1 bloque más alto.
+            # Asume que 'y_avg' es la altura de la base (highest solid block).
             x_start, y_start, z_start = zone.get('x', 0), zone.get('y_avg', 0), zone.get('z', 0)
             
             # Para centrar la estructura, ajustamos x0 y z0 restando la mitad del tamaño.
@@ -208,8 +208,16 @@ class BuilderBot(BaseAgent):
             x0 = center_x - size_x // 2
             z0 = center_z - size_z // 2
             
+            # FIX 1: La base (piso) debe comenzar al menos 1 bloque *encima* del bloque de tierra más alto.
             self.construction_position = Vec3(x0, int(y_start) + 1, z0) 
+            
             self.logger.info(f"Base de construccion en: ({x0}, {self.construction_position.y}, {z0}). Altura base: {y_start}")
+
+            # NEW: Asegurar que el área esté limpia, desde el suelo hacia arriba
+            clear_y0 = int(y_start)
+            clear_y1 = clear_y0 + size_y + 2 # Limpiar hasta dos bloques por encima del techo
+            self.mc.setBlocks(x0, clear_y0, z0, x1, clear_y1, z1, block.AIR.id)
+            self.logger.debug(f"Despejando área de construccion de Y={clear_y0} a Y={clear_y1}")
 
         x0 = int(self.construction_position.x)
         y_base = int(self.construction_position.y)

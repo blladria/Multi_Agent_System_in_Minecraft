@@ -238,18 +238,26 @@ class MinerBot(BaseAgent):
 
         # 2. Asignación de Estrategia: PRIORIZAR PROFUNDIDAD (Vertical/Vein)
         
-        if most_needed_material in ("diamond_ore", "iron_ore", "gold_ore", "lapis_lazuli_ore", "redstone_ore"):
-             # Vein Search para minerales concentrados (máxima prioridad)
-             new_strategy_name = "vein"
-        elif most_needed_material in ("stone", "cobblestone"):
-            # Vertical Search para minería profunda (alta prioridad)
-            new_strategy_name = "vertical"
-        elif "dirt" in remaining_requirements and most_needed_material == "dirt":
-            # Grid Search solo si DIRT es el material más necesario
+        # Lista de materiales que requieren minería profunda
+        deep_materials = ("stone", "cobblestone", "diamond_ore", "iron_ore", "gold_ore", "lapis_lazuli_ore", "redstone_ore")
+        
+        # Verifica si el material más necesitado es un material profundo
+        if most_needed_material in deep_materials:
+            if most_needed_material in ("diamond_ore", "iron_ore", "gold_ore", "lapis_lazuli_ore", "redstone_ore"):
+                new_strategy_name = "vein"
+            else:
+                new_strategy_name = "vertical"
+        
+        # Verifica si solo queda DIRT pendiente
+        elif "dirt" in remaining_requirements and len(remaining_requirements) == 1:
             new_strategy_name = "grid"
+        
+        # Fallback (si se pide algo raro o solo queda dirt)
+        elif most_needed_material == "dirt":
+             new_strategy_name = "grid"
         else:
-            # Fallback a Vertical
-            new_strategy_name = "vertical" 
+             new_strategy_name = "vertical"
+
 
         
         # 3. Aplicar la estrategia solo si es diferente
@@ -261,8 +269,10 @@ class MinerBot(BaseAgent):
                 self.logger.info(f"Estrategia de mineria adaptada a: {new_strategy_name}")
                 
                 # FIX 2b: Reset position and strategy state when switching to Grid from Vertical/Vein
-                # Asumimos que si la Y actual es baja, venimos de Vertical/Vein.
-                if new_strategy_name == "grid" and self.mining_position.y < 60:
+                # Esto es CRÍTICO para asegurar que el bot no intente minar la superficie a Y=5.
+                if new_strategy_name == "grid":
+                     self.mining_position.x = 10 # Reset X
+                     self.mining_position.z = 10 # Reset Z
                      self.mining_position.y = 65  # Reset Y a un nivel seguro de superficie
                      # Reiniciar los anclajes de la GridSearchStrategy recién instanciada.
                      self.current_strategy_instance.start_x = None 
