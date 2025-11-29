@@ -177,6 +177,7 @@ class BuilderBot(BaseAgent):
         """
         
         # OBTENEMOS LAS COORDENADAS PARA INCLUIRLAS EN EL CONTEXTO
+        # Utilizamos las coordenadas del centro de la zona explorada
         target_zone_data = self.terrain_data.get("optimal_zone", {}).get("center", {})
         
         bom_message = {

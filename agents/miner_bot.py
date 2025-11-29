@@ -38,8 +38,7 @@ class MinerBot(BaseAgent):
         self.inventory: Dict[str, int] = {mat: 0 for mat in MATERIAL_MAP.keys()}
         
         # --- POSICIÓN INICIAL DE TRABAJO PREDETERMINADA (Y visible) ---
-        # Se inicializa en (10, 65, 10). Esta posición será sobrescrita por el BuilderBot
-        # tan pronto como reciba los requisitos de materiales.
+        # Se inicializa en (10, 65, 10). Esta posición será sobrescrita por el BuilderBot.
         self.mining_position: Vec3 = Vec3(10, 65, 10)
         # ---------------------------------------------
             
@@ -212,19 +211,20 @@ class MinerBot(BaseAgent):
             # --- MODIFICACION: LEER COORDENADAS DE TRABAJO DEL CONTEXTO ---
             target_zone = message.get("context", {}).get("target_zone")
             if target_zone and all(key in target_zone for key in ['x', 'z']):
-                 x = target_zone['x']
-                 z = target_zone['z']
+                 # Convertir a int de forma segura
+                 x = int(target_zone['x'])
+                 z = int(target_zone['z'])
                  
                  try:
                      # 1. Obtener la altura real de la superficie en las nuevas coordenadas
-                     y_surface = self.mc.getHeight(int(x), int(z))
+                     y_surface = self.mc.getHeight(x, z)
                      # 2. Establecer la Y del bot a una posición de superficie visible + 1
-                     self.mining_position.y = max(self.mining_position.y, y_surface + 1)
+                     self.mining_position.y = y_surface + 1 
                  except Exception:
                      # Fallback si la conexión falla al obtener altura
                      self.mining_position.y = 65 
                      
-                 # 3. Actualizar X y Z a las coordenadas de trabajo
+                 # 3. Actualizar X y Z a las coordenadas de trabajo (como int)
                  self.mining_position.x = x
                  self.mining_position.z = z
                  self.logger.info(f"Posicion de mineria reajustada al centro de construccion: ({self.mining_position.x}, {self.mining_position.y}, {self.mining_position.z})")
