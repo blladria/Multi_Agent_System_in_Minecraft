@@ -227,7 +227,7 @@ class MinerBot(BaseAgent):
                 self.current_strategy_name = new_strategy_name
             return 
 
-        # 1. Determinar el material principal (ignorando los ya cumplidos)
+        # 1. Determinar el material pendiente (ignorando los ya cumplidos)
         remaining_requirements = {mat: qty - self.inventory.get(mat, 0) 
                                   for mat, qty in self.requirements.items() if qty > self.inventory.get(mat, 0)}
         

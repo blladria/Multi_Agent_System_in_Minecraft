@@ -212,13 +212,9 @@ class BuilderBot(BaseAgent):
             self.construction_position = Vec3(x0, int(y_start) + 1, z0) 
             
             self.logger.info(f"Base de construccion en: ({x0}, {self.construction_position.y}, {z0}). Altura base: {y_start}")
-
-            # NEW: Asegurar que el área esté limpia, desde el suelo hacia arriba
-            clear_y0 = int(y_start)
-            clear_y1 = clear_y0 + size_y + 2 # Limpiar hasta dos bloques por encima del techo
-            self.mc.setBlocks(x0, clear_y0, z0, x1, clear_y1, z1, block.AIR.id)
-            self.logger.debug(f"Despejando área de construccion de Y={clear_y0} a Y={clear_y1}")
-
+        
+        # --- DEFINICIÓN DE BOUNDS FUERA DEL BLOQUE IF PARA EVITAR UnboundLocalError ---
+        
         x0 = int(self.construction_position.x)
         y_base = int(self.construction_position.y)
         z0 = int(self.construction_position.z)
@@ -227,6 +223,15 @@ class BuilderBot(BaseAgent):
         x1 = x0 + size_x - 1
         z1 = z0 + size_z - 1
         
+        # NEW: Asegurar que el área esté limpia, desde el suelo hacia arriba, SOLO EN EL PRIMER STEP
+        if self.build_step == 0:
+            # y_start ahora es el nivel del suelo (y_base - 1)
+            clear_y0 = y_base - 1 
+            clear_y1 = y_base + size_y + 2 # Limpiar hasta dos bloques por encima del techo
+            # FIX: x1 y z1 ya están definidos aquí, resolviendo el UnboundLocalError.
+            self.mc.setBlocks(x0, clear_y0, z0, x1, clear_y1, z1, block.AIR.id)
+            self.logger.debug(f"Despejando área de construccion de Y={clear_y0} a Y={clear_y1}")
+
         # 2. Lógica de Materiales por defecto
         required_materials_keys = list(self.current_plan["materials"].keys())
         
