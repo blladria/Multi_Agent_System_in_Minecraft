@@ -171,7 +171,12 @@ class MinerBot(BaseAgent):
             # 3. Actualizamos el marcador en la posición visible de la superficie.
             self._update_marker(marker_position_visible) 
             # ----------------------------------------------------------------------
-
+            
+            ### MODIFICACIÓN CLAVE DE DEBUG ###
+            # Publicar la posición en el chat de Minecraft
+            self.mc.postToChat(f"MinerBot: Activo en X:{x_working}, Z:{z_working} (Trabajando en Y:{int(self.mining_position.y)})")
+            
+            # Continúa con la ejecución de la estrategia
             await self.current_strategy_instance.execute(
                 requirements=self.requirements,
                 inventory=self.inventory,
