@@ -140,8 +140,12 @@ class MinerBot(BaseAgent):
             if self._check_requirements_fulfilled():
                 await self._complete_mining_cycle() 
                 self.state = AgentState.IDLE 
-            elif not self.mining_sector_locked:
-                self.mining_sector_locked = True
+            else:
+                 # NEW LOGIC: Always check for strategy shift if still mining.
+                 await self._select_adaptive_strategy()
+                 
+                 if not self.mining_sector_locked:
+                    self.mining_sector_locked = True
 
     async def act(self):
         if self.state == AgentState.RUNNING and self.mining_sector_locked:
