@@ -215,6 +215,10 @@ class MinerBot(BaseAgent):
                  x = int(target_zone['x'])
                  z = int(target_zone['z'])
                  
+                 # Aplicar las coordenadas X y Z al bot
+                 self.mining_position.x = x
+                 self.mining_position.z = z
+                 
                  try:
                      # 1. Obtener la altura real de la superficie en las nuevas coordenadas
                      y_surface = self.mc.getHeight(x, z)
@@ -224,9 +228,11 @@ class MinerBot(BaseAgent):
                      # Fallback si la conexión falla al obtener altura
                      self.mining_position.y = 65 
                      
-                 # 3. Actualizar X y Z a las coordenadas de trabajo (como int)
-                 self.mining_position.x = x
-                 self.mining_position.z = z
+                 # --- FIX CRÍTICO: REINICIAR LA ESTRATEGIA AL MOVERSE ---
+                 # Forzar a que la estrategia (Vertical o Grid) se reinicie en la nueva posición.
+                 # Esto borra los anclajes internos de la estrategia (GridSearch, VerticalSearch).
+                 self.current_strategy_instance.__init__(self.mc, self.logger)
+                 
                  self.logger.info(f"Posicion de mineria reajustada al centro de construccion: ({self.mining_position.x}, {self.mining_position.y}, {self.mining_position.z})")
             # -------------------------------------------------------------
             
