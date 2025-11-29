@@ -58,6 +58,7 @@ class MinerBot(BaseAgent):
             self.logger
         )
         
+        # Marcador Amarillo (Lana Amarilla = data 4)
         self._set_marker_properties(block.WOOL.id, 4)
 
     # --- Lógica de Programación Funcional (Agregación) ---
@@ -151,11 +152,30 @@ class MinerBot(BaseAgent):
 
     async def act(self):
         if self.state == AgentState.RUNNING and self.mining_sector_locked:
-            self._update_marker(self.mining_position) 
+            
+            # --- CORRECCIÓN: VISUALIZACIÓN DEL MARCADOR EN LA SUPERFICIE ---
+            # 1. Usamos el X/Z de la posición de minería (el pozo actual).
+            x_working = int(self.mining_position.x)
+            z_working = int(self.mining_position.z)
+            
+            # 2. Obtenemos la altura real de la superficie para la visualización.
+            try:
+                 # getHeight devuelve el bloque sólido más alto. Se suma 1 para que el marcador esté por encima.
+                 display_y = self.mc.getHeight(x_working, z_working) + 1
+            except Exception:
+                 # Fallback si falla getHeight o conexión a MC.
+                 display_y = 70 
+                 
+            marker_position_visible = Vec3(x_working, display_y, z_working)
+            
+            # 3. Actualizamos el marcador en la posición visible de la superficie.
+            self._update_marker(marker_position_visible) 
+            # ----------------------------------------------------------------------
+
             await self.current_strategy_instance.execute(
                 requirements=self.requirements,
                 inventory=self.inventory,
-                position=self.mining_position,
+                position=self.mining_position, # Mantenemos la posición interna (con Y profunda) para la lógica de la estrategia.
                 mine_block_callback=self._mine_current_block 
             )
             await self._publish_inventory_update(status="PENDING")
