@@ -31,7 +31,7 @@ class GridSearchStrategy(BaseMiningStrategy):
         
         # Obtener la altura real de la superficie (para alineación y minado)
         current_surface_y = self.mc.getHeight(x_target, z_target)
-        # CORRECCIÓN MARCADOR: La posición base es el bloque sólido superior.
+        # La posición base es el bloque sólido superior.
         position.y = current_surface_y 
 
         # --- Lógica de Minería Adaptativa ---
@@ -39,60 +39,56 @@ class GridSearchStrategy(BaseMiningStrategy):
         if 'wood' in requirements and requirements['wood'] > 0:
             self.logger.debug("Estrategia: Grid/Tala (Buscando WOOD).")
             
-            # CORRECCIÓN 1: La búsqueda de troncos debe empezar UN BLOQUE POR ENCIMA 
-            # de la superficie (current_surface_y) para encontrar el tronco o las hojas.
-            y_check_start = current_surface_y + 1
+            # CORRECCIÓN: Empezamos a buscar 1 bloque por encima de la superficie.
+            y_check_start = current_surface_y + 1 
             is_tree_found = False
-            y_trunk_base = y_check_start
             
-            # 2. Búsqueda vertical de troncos
-            # Buscamos la base (WOOD) en un rango de 15 bloques hacia arriba.
-            for dy in range(15): 
+            # Inicializamos la base con la altura de inicio, para que capture la Y más baja.
+            lowest_tree_y = y_check_start 
+            highest_tree_y = y_check_start
+            
+            # 2. Búsqueda vertical de troncos y hojas
+            for dy in range(15): # Busca 15 bloques hacia arriba
                 y_check = y_check_start + dy
                 
                 try:
                     block_at_pos = self.mc.getBlock(x_target, y_check, z_target)
                 except Exception:
                     break
-
-                # Comprobamos si es un bloque de árbol (Wood o Leaves)
-                if block_at_pos == self.WOOD_BLOCK_ID:
-                    is_tree_found = True
-                    # La primera WOOD que encontramos subiendo es la base del tronco
-                    y_trunk_base = y_check 
-                    break # Encontramos la base, detenemos la búsqueda de base.
-                elif block_at_pos == self.LEAVES_BLOCK_ID:
-                    is_tree_found = True # Encontró hojas, es un árbol.
-                elif block_at_pos == block.AIR.id and is_tree_found:
-                    # Si ya encontramos parte del árbol (is_tree_found), y ahora es aire, paramos la búsqueda de la base.
-                    break
-                elif block_at_pos == block.AIR.id and not is_tree_found:
-                    # Si encontramos aire y aún no hay rastro de árbol, no hay árbol aquí.
-                    break
-
-            if is_tree_found:
-                self.logger.info(f"Árbol encontrado. Iniciando tala vertical desde Y={y_trunk_base}.")
                 
-                # 3. Tala la columna desde la base hacia arriba
-                # Intentamos minar hasta 15 bloques por encima de la base, asegurando la destrucción de hojas y troncos.
-                for y_mine in range(y_trunk_base, y_trunk_base + 15):
+                # Si encontramos un bloque de ARBOL (madera o hojas)
+                if block_at_pos == self.WOOD_BLOCK_ID or block_at_pos == self.LEAVES_BLOCK_ID:
+                    if not is_tree_found:
+                        lowest_tree_y = y_check # Captura la Y más baja del árbol
+                    highest_tree_y = y_check # Captura la Y más alta del árbol
+                    is_tree_found = True
+                
+                # Si encontramos aire y ya habíamos encontrado parte del árbol (hojas o tronco), es el final de la estructura.
+                elif block_at_pos == block.AIR.id and is_tree_found:
+                    break 
+                
+                # Si encontramos aire antes de encontrar árbol, no hay árbol.
+                elif block_at_pos == block.AIR.id and not is_tree_found:
+                    break
+            
+            if is_tree_found:
+                # 3. Minar el árbol completo desde la base hasta el tope encontrado (+3 de margen para hojas superiores)
+                self.logger.info(f"Árbol encontrado. Iniciando tala vertical de Y={lowest_tree_y} a Y={highest_tree_y}.")
+                
+                for y_mine in range(lowest_tree_y, highest_tree_y + 3): 
                     mine_pos = Vec3(x_target, y_mine, z_target)
                     
                     try:
                         block_to_mine_id = self.mc.getBlock(x_target, y_mine, z_target)
                     except Exception:
-                        break
+                        continue 
 
-                    # Asegurar que solo minamos madera o hojas (lo que mapea a "wood" en miner_bot)
+                    # Solo llamamos al callback si es un bloque de madera o hojas.
+                    # El bucle continua incluso si encuentra aire (rompe a través del follaje).
                     if block_to_mine_id == self.WOOD_BLOCK_ID or block_to_mine_id == self.LEAVES_BLOCK_ID:
                         await mine_block_callback(mine_pos)
                     
-                    # CORRECCIÓN 2 (CRÍTICA): Se elimina la ruptura por aire.
-                    # El bucle debe continuar, permitiendo romper hojas/madera más arriba.
-                    # if block_to_mine_id == block.AIR.id:
-                    #     break 
-                    
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.1) # Pausa breve entre picos
             else:
                  self.logger.debug("No se encontró madera. Continuando búsqueda horizontal.")
                  
