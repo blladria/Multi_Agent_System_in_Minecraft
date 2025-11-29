@@ -27,8 +27,7 @@ class BaseAgent(ABC):
     Implementa la FSM unificada y el ciclo Perceive-Decide-Act.
     """
     def __init__(self, agent_id: str, mc_connection, message_broker):
-        super().__init__(agent_id, mc_connection, message_broker)
-        
+        self.agent_id = agent_id
         self.mc = mc_connection  # Conexión a Minecraft (obtenida de mcpi.Minecraft.create())
         self.broker = message_broker # Referencia al MessageBroker (core/message_broker.py)
 
