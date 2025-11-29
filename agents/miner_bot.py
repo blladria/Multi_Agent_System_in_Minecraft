@@ -209,11 +209,18 @@ class MinerBot(BaseAgent):
     async def _select_adaptive_strategy(self):
         """
         Selecciona la estrategia de minería más adecuada basada en el material más requerido.
-        Usa Grid para superficie (Dirt) y Vertical/Vein para profundidad (Stone/Minerales).
+        Prioriza la minería profunda (Vertical/Vein) si se necesita Stone o minerales.
         """
         if not self.requirements:
+            # Estado por defecto
             new_strategy_name = "vertical" 
-        
+            # Aplicar la estrategia solo si es diferente
+            if new_strategy_name != self.current_strategy_name:
+                StrategyClass = self.strategy_classes[new_strategy_name]
+                self.current_strategy_instance = StrategyClass(self.mc, self.logger)
+                self.current_strategy_name = new_strategy_name
+            return 
+
         # 1. Determinar el material principal (ignorando los ya cumplidos)
         remaining_requirements = {mat: qty - self.inventory.get(mat, 0) 
                                   for mat, qty in self.requirements.items() if qty > self.inventory.get(mat, 0)}
@@ -223,17 +230,19 @@ class MinerBot(BaseAgent):
 
         most_needed_material = max(remaining_requirements, key=remaining_requirements.get)
 
-        # 2. Asignación de Estrategia
-        if "dirt" in remaining_requirements: # Grid para tierra
-            # Grid Search para minería de superficie (Tierra)
-            new_strategy_name = "grid"
-        elif most_needed_material in ("diamond_ore", "iron_ore", "gold_ore", "lapis_lazuli_ore", "redstone_ore"):
-             # Vein Search para minerales concentrados
+        # 2. Asignación de Estrategia: PRIORIZAR PROFUNDIDAD (Vertical/Vein)
+        
+        if most_needed_material in ("diamond_ore", "iron_ore", "gold_ore", "lapis_lazuli_ore", "redstone_ore"):
+             # Vein Search para minerales concentrados (máxima prioridad)
              new_strategy_name = "vein"
         elif most_needed_material in ("stone", "cobblestone"):
-            # Vertical Search para minería profunda (Piedra)
+            # Vertical Search para minería profunda (alta prioridad)
             new_strategy_name = "vertical"
+        elif "dirt" in remaining_requirements and most_needed_material == "dirt":
+            # Grid Search solo si DIRT es el material más necesario
+            new_strategy_name = "grid"
         else:
+            # Fallback a Vertical
             new_strategy_name = "vertical" 
 
         
