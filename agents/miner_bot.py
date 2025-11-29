@@ -84,12 +84,12 @@ class MinerBot(BaseAgent):
         return all(self.inventory.get(material, 0) >= required_qty 
                    for material, required_qty in self.requirements.items())
 
-    # --- NUEVA Lógica de Extracción REAL ---
+    # --- Lógica de Extracción REAL (CORREGIDA) ---
     
     async def _mine_current_block(self, position: Vec3) -> bool:
         """
         Rompe el bloque en la posición dada en MC (animación visual) y actualiza el inventario
-        solo si se extrajo un material útil o genérico.
+        solo si se extrajo un material útil, LIMITANDO la recolección a los requisitos.
         """
         x, y, z = int(position.x), int(position.y), int(position.z)
         
@@ -104,30 +104,35 @@ class MinerBot(BaseAgent):
             self.logger.debug(f"Posición ({x}, {y}, {z}) ya es aire. Minería ignorada.")
             return False
 
-        # 2. Mapear ID a Material Relevante (Buscamos 'wood' y 'dirt')
+        # 2. Mapear ID a Material Relevante
         material_found = None
         for name, id in MATERIAL_MAP.items():
-            # Si el ID coincide Y el material es requerido O es uno de los materiales base
-            # Buscamos WOOD (17) o DIRT (3)
-            if id == current_block_id and (name in self.requirements or name in ("wood", "dirt")):
+            # Buscamos solo materiales REQUERIDOS
+            if id == current_block_id and name in self.requirements:
                  material_found = name
                  break
         
-        # 3. Romper el Bloque en Minecraft (ACCION REAL y ANIMACIÓN)
+        # 3. Romper el Bloque en Minecraft
         try:
             # Esta línea rompe el bloque y proporciona la animación visual.
             self.mc.setBlock(x, y, z, block.AIR.id)
             self.logger.debug(f"BLOQUE ROTO en ({x}, {y}, {z}). ID: {current_block_id}")
             
-            # 4. Actualizar Inventario
+            # 4. Actualizar Inventario (LÓGICA DE DETENCIÓN CRÍTICA)
             if material_found:
-                # Solo se extrae 1 unidad por bloque roto.
-                self.inventory[material_found] = self.inventory.get(material_found, 0) + 1
-                self.logger.info(f"EXTRAÍDO 1 de {material_found}. Total: {self.inventory[material_found]}")
+                required_qty = self.requirements.get(material_found, 0)
+                current_qty = self.inventory.get(material_found, 0)
+
+                # **SOLO INCREMENTAR SI AÚN NO SE HA ALCANZADO LA CANTIDAD REQUERIDA**
+                if required_qty > 0 and current_qty < required_qty:
+                    self.inventory[material_found] = current_qty + 1
+                    self.logger.info(f"EXTRAÍDO 1 de {material_found}. Total: {self.inventory[material_found]}/{required_qty}")
+                else:
+                    # El material fue encontrado pero ya se cumplió el requisito. Se desecha el bloque extra.
+                    self.logger.debug(f"Material {material_found} ya cumplido ({current_qty}/{required_qty}). Bloque desechado.")
             else:
-                # Si el material no es requerido/mapeado (e.g., piedra, gravilla), se asigna a dirt genérico para el volumen.
-                self.inventory["dirt"] = self.inventory.get("dirt", 0) + 1 
-                self.logger.debug(f"BLOQUE ROTO Y DESCARTADO/ASIGNADO A DIRT. ID: {current_block_id}")
+                # El bloque no es un material requerido. Se rompe y desecha (esto elimina el over-mining de 'dirt').
+                self.logger.debug(f"Bloque minado ID:{current_block_id} no es material requerido ({list(self.requirements.keys())}). Bloque desechado.")
                 
             return True
         except Exception as e:
