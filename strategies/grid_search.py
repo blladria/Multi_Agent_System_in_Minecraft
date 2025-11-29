@@ -25,9 +25,9 @@ class GridSearchStrategy(BaseMiningStrategy):
              self.search_x = 0
              self.search_z += 1
         
-        position.x += 1
-        position.z += 1
-        x_target, z_target = int(position.x), int(position.z)
+        # Uso de coordenadas enteras para el target
+        x_target, z_target = int(position.x) + 1, int(position.z) + 1
+        position.x, position.z = x_target, z_target
         
         # Obtener la altura real de la superficie (para alineación y minado)
         current_surface_y = self.mc.getHeight(x_target, z_target)
@@ -39,11 +39,14 @@ class GridSearchStrategy(BaseMiningStrategy):
         if 'wood' in requirements and requirements['wood'] > 0:
             self.logger.debug("Estrategia: Grid/Tala (Buscando WOOD).")
             
-            y_check_start = current_surface_y
+            # CORRECCIÓN CLAVE: Empezar la búsqueda 1 bloque por encima de la superficie (current_surface_y + 1)
+            # para encontrar la base del tronco o las hojas.
+            y_check_start = current_surface_y + 1 
             is_tree_found = False
             y_trunk_base = y_check_start
             
             # 2. Búsqueda vertical de troncos
+            # Se usa 15 como rango máximo para buscar un tronco
             for dy in range(15): 
                 y_check = y_check_start + dy
                 
@@ -54,8 +57,13 @@ class GridSearchStrategy(BaseMiningStrategy):
 
                 if block_at_pos == self.WOOD_BLOCK_ID:
                     is_tree_found = True
-                    y_trunk_base = y_check 
-                    break 
+                    # Al encontrar la madera, registramos la Y más baja para empezar a talar
+                    if y_check < y_trunk_base:
+                         y_trunk_base = y_check
+                    break
+                elif block_at_pos == block.AIR.id:
+                    # Si encontramos aire antes de madera, no hay árbol aquí
+                    break
 
             if is_tree_found:
                 self.logger.info(f"Árbol encontrado. Iniciando tala vertical desde Y={y_trunk_base}.")
@@ -69,7 +77,7 @@ class GridSearchStrategy(BaseMiningStrategy):
                     except Exception:
                         break
 
-                    # CORRECCIÓN PICADO: Detener la tala si se golpea el aire o ya se picó
+                    # Detener la tala si se golpea el aire o ya se picó
                     if block_to_mine_id == block.AIR.id:
                         break 
                     
