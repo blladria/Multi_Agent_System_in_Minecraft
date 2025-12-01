@@ -37,6 +37,7 @@ class ExplorerBot(BaseAgent):
     # --- Ciclo Perceive-Decide-Act ---
     
     async def perceive(self):
+        """Procesa los mensajes pendientes en la cola del agente."""
         if self.broker.has_messages(self.agent_id):
             message = await self.broker.consume_queue(self.agent_id)
             await self._handle_message(message)
@@ -170,8 +171,10 @@ class ExplorerBot(BaseAgent):
                     self.exploration_position = Vec3(x, y_surface + 1, z) 
                     self._update_marker(self.exploration_position)
                     
-                    # Pausa ASÍNCRONA: Cede el control al event loop para procesar mensajes
-                    await asyncio.sleep(0.01) # Muy corto para inmediatez en comandos
+                    # CORRECCIÓN CLAVE: Ejecutar perceive AHORA para procesar comandos pendientes 
+                    # (status, stop) y ceder el control al bucle de eventos.
+                    await self.perceive() 
+                    await asyncio.sleep(0.01) # Pausa ASÍNCRONA: cede el control por un instante.
                     
                     # 2. Obtener bloques y registrarlos
                     for y in range(y_surface - 2, y_surface + 3): # Rango de 5 bloques alrededor de la superficie
@@ -202,7 +205,7 @@ class ExplorerBot(BaseAgent):
                 self.map_data = {} # Resetear el mapa
                 self.state = AgentState.RUNNING
             
-            # El Validator ahora permite 'stop', por lo que el comando funciona correctamente.
+            # Los comandos de control ahora llegan correctamente gracias a la corrección del Validator
             elif command == 'stop': 
                 self.handle_stop()
             
@@ -222,7 +225,7 @@ class ExplorerBot(BaseAgent):
                         key, val = arg.split('=', 1)
                         arg_map[key] = val
                 
-                # CORRECCIÓN: Buscamos el valor de 'range' directamente en el mapa de argumentos parseados
+                # Buscamos el valor de 'range' directamente en el mapa de argumentos parseados
                 if 'range' in arg_map:
                     try:
                         new_range = int(arg_map['range'])
@@ -231,7 +234,7 @@ class ExplorerBot(BaseAgent):
                     except ValueError:
                         self.logger.error(f"Valor de rango inválido: {arg_map['range']}")
             
-            # El Validator ahora permite 'status', por lo que el comando funciona correctamente.
+            # Manejamos el comando 'explorer status'
             elif command == 'status':
                 await self._publish_status()
 
