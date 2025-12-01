@@ -3,8 +3,8 @@ import asyncio
 import logging
 from typing import Dict, Any, Tuple
 from agents.base_agent import BaseAgent, AgentState
-from mcpi.vec3 import Vec3
 from mcpi import block
+from mcpi.vec3 import Vec3
 from datetime import datetime, timezone
 
 # --- MAPEO DE BLOQUES Y DISEÑO DE LA "Simple Shelter" (DIRT/STONE ONLY) ---
@@ -58,6 +58,9 @@ class BuilderBot(BaseAgent):
     def __init__(self, agent_id: str, mc_connection, message_broker):
         super().__init__(agent_id, mc_connection, message_broker)
 
+        # FIX: Inicialización del atributo terrain_data para compatibilidad con tests.
+        self.terrain_data: Dict[str, Any] = {}
+        
         self.required_bom: Dict[str, int] = {}
         self.current_inventory: Dict[str, int] = {}
         self.target_zone: Dict[str, int] = {}
@@ -213,8 +216,10 @@ class BuilderBot(BaseAgent):
 
         elif msg_type == "map.data.v1":
             # Recibe el mapa y la zona objetivo del ExplorerBot
+            # El ExplorerBot ahora envía el BOM a través del contexto
             self.target_zone = payload.get("target_location", {})
-            self.required_bom = message.get("context", {}).get("required_bom", {})
+            self.required_bom = message.get("context", {}).get("required_bom", {}) # Obtiene el BOM del contexto
+
             self.logger.info(f"Mapa recibido. Zona objetivo: {self.target_zone}. BOM: {self.required_bom}")
             
             # Si estaba esperando mapa, reanuda la decisión
@@ -222,7 +227,7 @@ class BuilderBot(BaseAgent):
                 self.state = AgentState.RUNNING 
 
         elif msg_type == "inventory.v1":
-            # Recibe actualización de inventario del MinerBot
+            # Actualiza el inventario local con los datos del MinerBot
             new_inventory = payload.get("collected_materials", {})
             self.current_inventory.update(new_inventory)
             self.logger.info(f"Inventario actualizado. Vol: {payload.get('total_volume')}")

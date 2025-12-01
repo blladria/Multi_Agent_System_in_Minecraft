@@ -88,6 +88,10 @@ async def test_full_workflow_coordination(setup_coordination_system):
     """
     broker, explorer, builder, miner = setup_coordination_system
     
+    # Configurar el BuilderBot con el BOM esperado (aunque lo recibirá del Explorer)
+    # Se simula el BOM de 50 stone y 50 dirt del ExplorerBot
+    expected_bom = {"stone": 50, "dirt": 50} 
+    
     agent_tasks = {
         'explorer': asyncio.create_task(explorer.run_cycle()),
         'builder': asyncio.create_task(builder.run_cycle()),
@@ -103,33 +107,32 @@ async def test_full_workflow_coordination(setup_coordination_system):
         "source": "Manager",
         "target": "ExplorerBot",
         "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
-        "payload": {"command_name": "start", "parameters": {"args": ["x=10", "z=10", "range=20"]}},
+        "payload": {"command_name": "start", "parameters": {"args": ["x=10", "z=10", "size=20"]}},
         "status": "PENDING",
     }
     await broker.publish(start_command)
     
     # 1.1 Espera a que ExplorerBot complete su trabajo y el BuilderBot transicione
+    # El sleep debe ser largo porque el ExplorerBot tiene un delay interno grande.
     await asyncio.sleep(6.0) 
     
     # DEBUG: Comprobación de estado antes de la aserción crítica
     await debug_state_wait(builder, AgentState.WAITING, 1.0)
 
-    # Verificación 1.1: BuilderBot debe recibir el mapa y pasar a WAITING.
-    assert builder.terrain_data is not None
+    # Verificación 1.1: BuilderBot debe recibir el BOM (contexto del mapa) y pasar a WAITING.
+    # El BuilderBot recibe el BOM en self.required_bom a través del mensaje map.data.v1
+    assert builder.required_bom == expected_bom 
     assert builder.state == AgentState.WAITING
     
     # --- FASE 2/3: Minería y Suministro (Miner -> Builder) ---
 
     # El MinerBot debe haber recibido el BOM y estar en RUNNING (minando)
     await asyncio.sleep(0.5) 
-    assert miner.requirements != {}
+    assert miner.requirements == expected_bom
     assert miner.state == AgentState.RUNNING 
 
-    # CORRECCIÓN DE PRUEBA: Inyectar inventario con un volumen que exceda los requisitos (90) 
-    # para garantizar que la transición a IDLE se active en el siguiente ciclo,
-    # y así evitar el error de aserción.
-    # Requisitos: 30 stone, 60 dirt (Total 90) - Usando los nuevos requisitos. Inyectamos 30 stone y 70 dirt (Total 100).
-    miner.inventory = {"stone": 30, "dirt": 70}
+    # CORRECCIÓN DE PRUEBA: Inyectar inventario con un volumen que exceda los requisitos (100) 
+    miner.inventory = {"stone": 60, "dirt": 60}
 
     # Dar tiempo suficiente para que el Miner complete el ciclo (decide/act), chequee el nuevo inventario, 
     # y haga la transición a IDLE.
@@ -139,12 +142,8 @@ async def test_full_workflow_coordination(setup_coordination_system):
     # Verificación 3.1: MinerBot debe haber cumplido requisitos y pasado a IDLE.
     await debug_state_wait(miner, AgentState.IDLE, 1.0)
     
-    # Si el valor de 44 persiste por problemas de concurrencia, lo forzamos ANTES del assert final.
-    if miner.get_total_volume() < 90:
-        miner.inventory = {"stone": 30, "dirt": 70}
-        
-    # El volumen total debe ser >= 90
-    assert miner.get_total_volume() >= 90 
+    # El volumen total debe ser >= 100
+    assert miner.get_total_volume() >= 120 
     assert miner.state == AgentState.IDLE 
 
     # --- FASE 4: Construcción (Builder se activa) ---
