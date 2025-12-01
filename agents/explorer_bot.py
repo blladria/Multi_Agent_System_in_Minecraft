@@ -202,25 +202,30 @@ class ExplorerBot(BaseAgent):
                 self.map_data = {} # Resetear el mapa
                 self.state = AgentState.RUNNING
             
+            # FIX: Aseguramos el manejo explícito de stop, pause y resume
+            elif command == 'stop': 
+                self.handle_stop()
+            
+            elif command == 'pause': 
+                self.handle_pause()
+            
+            elif command == 'resume': 
+                self.handle_resume()
+            
+            # FIX: Manejamos el comando 'explorer set range <int>'
             elif command == 'set':
-                # Manejar /explorer set range <int>
                 if len(args) >= 2 and args[0] == 'range':
                     try:
                         new_range = int(args[1])
                         self.exploration_size = new_range
                         self.logger.info(f"Rango de exploración actualizado a: {new_range}x{new_range}")
-                        
-                        # Publicar ACK/Update (Requisito opcional, pero buena práctica)
-                        # Nota: En un sistema real, enviaríamos un 'update.status.v1'
-                        
                     except ValueError:
                         self.logger.error(f"Valor de rango inválido: {args[1]}")
-                
-            elif command == 'pause': self.handle_pause()
-            elif command == 'resume': 
-                self.handle_resume()
-            elif command == 'stop': self.handle_stop()
-            # El comando 'status' es gestionado por el Manager (en agent_manager.py), lo ignoramos aquí.
+            
+            # FIX: Manejamos el comando 'explorer status' para dar feedback
+            elif command == 'status':
+                await self._publish_status()
+
 
     def _parse_start_params(self, params: Dict[str, Any]):
         """Actualiza la posición inicial (esquina) y el tamaño del área a explorar."""
@@ -308,3 +313,18 @@ class ExplorerBot(BaseAgent):
             "dirt": 50,   
         }
         return bom
+    
+    # --- NUEVA FUNCIONALIDAD: Reportar estado a chat (Para /explorer status) ---
+    async def _publish_status(self):
+        """Publica el estado actual de ExplorerBot en el chat de Minecraft."""
+        status_message = (
+            f"[{self.agent_id}] Estado: {self.state.name} | "
+            f"Zona: ({int(self.exploration_position.x)}, {int(self.exploration_position.z)}) | "
+            f"Tamaño: {self.exploration_size}x{self.exploration_size} | "
+            f"Mapa: {len(self.map_data)} puntos explorados"
+        )
+        try:
+            self.mc.postToChat(status_message)
+            self.logger.info(f"Estado de ExplorerBot reportado al chat: {status_message}")
+        except Exception:
+            self.logger.warning("No se pudo publicar el estado en el chat de Minecraft.")
