@@ -235,6 +235,10 @@ class BuilderBot(BaseAgent):
             # Si estaba esperando mapa, reanuda la decisión
             if self.state == AgentState.WAITING: 
                 self.state = AgentState.RUNNING 
+            # --- FIX CRÍTICO: Si está IDLE, se le da luz verde para pasar a RUNNING ---
+            # Esto forzará el siguiente ciclo decide() a evaluarse y moverlo a WAITING si no hay materiales.
+            elif self.state == AgentState.IDLE: 
+                self.state = AgentState.RUNNING
 
         elif msg_type == "inventory.v1":
             # Actualiza el inventario local con los datos del MinerBot
@@ -245,7 +249,7 @@ class BuilderBot(BaseAgent):
             # Si estaba esperando materiales, reanuda la decisión
             if self.state == AgentState.WAITING:
                 self.state = AgentState.RUNNING
-
+                
     # --- Comunicación Externa ---
     
     async def _publish_build_complete(self):
