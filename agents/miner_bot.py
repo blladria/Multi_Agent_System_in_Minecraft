@@ -321,12 +321,10 @@ class MinerBot(BaseAgent):
     async def _select_adaptive_strategy(self):
         """
         Selecciona la estrategia de minería más adecuada basada en el material más requerido.
-        Prioriza la minería profunda (Vertical/Vein) si se necesita Cobblestone o minerales.
+        Ajustado para priorizar la minería de superficie (Grid) para la tierra (Dirt).
         """
         if not self.requirements:
-            # Estado por defecto
             new_strategy_name = "vertical" 
-            # Aplicar la estrategia solo si es diferente
             if new_strategy_name != self.current_strategy_name:
                 StrategyClass = self.strategy_classes[new_strategy_name]
                 self.current_strategy_instance = StrategyClass(self.mc, self.logger)
@@ -341,33 +339,40 @@ class MinerBot(BaseAgent):
             return 
 
         most_needed_material = max(remaining_requirements, key=remaining_requirements.get)
+        
+        # --- LÓGICA DE PRIORIDAD ESTRATÉGICA (FIX para el usuario) ---
 
-        # 2. Asignación de Estrategia: PRIORIZAR PROFUNDIDAD (Vertical/Vein)
+        # Lista de materiales de alto valor (siempre priorizan Vein)
+        vein_materials = ("diamond_ore", "iron_ore", "gold_ore", "lapis_lazuli_ore", "redstone_ore")
         
-        # Lista de materiales que requieren minería profunda (incluyendo cobblestone como piedra base)
-        deep_materials = ("cobblestone", "stone", "diamond_ore", "iron_ore", "gold_ore", "lapis_lazuli_ore", "redstone_ore")
-        
-        # Verifica si el material más necesitado es un material profundo
-        if most_needed_material in deep_materials:
-            if most_needed_material in ("diamond_ore", "iron_ore", "gold_ore", "lapis_lazuli_ore", "redstone_ore"):
-                new_strategy_name = "vein"
-            else:
-                new_strategy_name = "vertical"
-        
-        # Verifica si solo queda DIRT pendiente
-        elif "dirt" in remaining_requirements and len(remaining_requirements) == 1:
+        # 2.1. REGLA 1: Priorizar Tierra (Dirt) con GridSearch (minería superficial)
+        # Esto asegura que la tierra se recolecte primero, rompiendo el bloqueo.
+        if remaining_requirements.get("dirt", 0) > 0:
             new_strategy_name = "grid"
+            self.logger.info("Prioridad Estratégica: DIRT pendiente. Forzando GridSearch (Superficie).")
         
-        # Fallback (si se pide algo raro o solo queda dirt)
-        elif most_needed_material == "dirt":
-             new_strategy_name = "grid"
+        # 2.2. REGLA 2: Minería de Veta (Alto Valor)
+        elif most_needed_material in vein_materials:
+            new_strategy_name = "vein"
+            self.logger.info("Prioridad Estratégica: Mineral de Alto Valor pendiente. Forzando VeinSearch.")
+            
+        # 2.3. REGLA 3: Minería Profunda (Cobblestone/Stone) con VerticalSearch
+        elif most_needed_material in ("cobblestone", "stone"):
+            new_strategy_name = "vertical"
+            self.logger.info("Prioridad Estratégica: Cobblestone/Stone pendiente. Forzando VerticalSearch (Profundo).")
+            
+        # 2.4. Fallback (Si se pide un material que no es dirt, cobble o vein_material)
         else:
              new_strategy_name = "vertical"
+             self.logger.info(f"Prioridad Estratégica: Material '{most_needed_material}' pendiente. Usando VerticalSearch por defecto.")
+        
+        # --- FIN LÓGICA DE PRIORIDAD ESTRATÉGICA ---
         
         # 3. Aplicar la estrategia solo si es diferente
         if new_strategy_name != self.current_strategy_name:
             if new_strategy_name in self.strategy_classes:
                 StrategyClass = self.strategy_classes[new_strategy_name]
+                # Se reinicia la instancia para que use la nueva posición desplazada como ancla
                 self.current_strategy_instance = StrategyClass(self.mc, self.logger)
                 self.current_strategy_name = new_strategy_name
                 self.logger.info(f"Estrategia de mineria adaptada a: {new_strategy_name}")
