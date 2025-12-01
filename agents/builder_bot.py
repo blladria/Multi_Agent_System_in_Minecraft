@@ -214,11 +214,21 @@ class BuilderBot(BaseAgent):
             elif command == 'resume': self.handle_resume()
             elif command == 'stop': self.handle_stop()
 
-        elif msg_type == "map.data.v1":
+        elif msg_type == "map.v1": # FIX: Cambiado a map.v1
+            context = message.get("context", {})
+
             # Recibe el mapa y la zona objetivo del ExplorerBot
-            # El ExplorerBot ahora envía el BOM a través del contexto
-            self.target_zone = payload.get("target_location", {})
-            self.required_bom = message.get("context", {}).get("required_bom", {}) # Obtiene el BOM del contexto
+            # Usamos el campo 'optimal_zone.center' del payload para la posición central, si existe
+            optimal_zone_center = payload.get("optimal_zone", {}).get("center", {})
+
+            # 1. Extraer la zona objetivo de donde sea más probable que esté (Contexto o Payload)
+            if context.get("target_zone"):
+                 self.target_zone = context["target_zone"]
+            elif optimal_zone_center:
+                 self.target_zone = optimal_zone_center
+
+            # 2. Extraer el BOM del contexto (asumido patrón de comunicación)
+            self.required_bom = context.get("required_bom", {}) 
 
             self.logger.info(f"Mapa recibido. Zona objetivo: {self.target_zone}. BOM: {self.required_bom}")
             
