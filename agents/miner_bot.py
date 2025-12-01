@@ -39,11 +39,17 @@ class MinerBot(BaseAgent):
         self.inventory: Dict[str, int] = {mat: 0 for mat in MATERIAL_MAP.keys()}
         
         # --- POSICIÓN INICIAL DE TRABAJO PREDETERMINADA (Y visible) ---
-        # Nota: Se sobrescribirá al iniciar si se usa el comando start correctamente
         self.mining_position: Vec3 = Vec3(10, 65, 10)
         # ---------------------------------------------
             
         self.mining_sector_locked = False 
+        
+        # --- NUEVOS CAMPOS PARA EL DESPLAZAMIENTO DE MINERÍA ---
+        # Ancla base del BuilderBot (donde se quiere construir)
+        self._base_build_anchor: Vec3 = Vec3(0, 0, 0)
+        # Contador de ciclos de minería completados (usado para desplazar el nuevo pozo)
+        self._mining_offset: int = 0
+        # --------------------------------------------------------
         
         # Registro de estrategias
         self.strategy_classes: Dict[str, Type[BaseMiningStrategy]] = { 
@@ -172,11 +178,6 @@ class MinerBot(BaseAgent):
             marker_position_visible = Vec3(x_working, display_y, z_working)
             self._update_marker(marker_position_visible) 
             
-            # 4. Actualizamos la Y de la posición de minería interna a la superficie
-            #    cuando es VerticalSearch y ha tocado fondo, esto se reinicia en el siguiente act.
-            # Nota: Esta línea debe ser controlada por la estrategia, no directamente aquí.
-            # Se ha eliminado el reset forzado a 'display_y' para evitar un bucle no deseado.
-            
             # Continúa con la ejecución de la estrategia
             await self.current_strategy_instance.execute(
                 requirements=self.requirements,
@@ -195,6 +196,10 @@ class MinerBot(BaseAgent):
     async def _complete_mining_cycle(self):
         await self._publish_inventory_update(status="SUCCESS")
         self.release_locks()
+        
+        # LÓGICA DE MOVIMIENTO MULTIPLE: Incrementa el offset después de completar un ciclo de suministro
+        self._mining_offset += 1
+        self.logger.info(f"Ciclo de minería completado. Offset incrementado a {self._mining_offset}.")
 
 
     async def _handle_message(self, message: Dict[str, Any]):
@@ -205,11 +210,8 @@ class MinerBot(BaseAgent):
             command = payload.get("command_name")
             if command == 'start' or command == 'fulfill':
                 
-                # --- CORRECCIÓN 1: Procesar parámetros antes de iniciar ---
-                # Esto asegura que el bot vaya a donde está el jugador o a las coords indicadas
                 params = payload.get("parameters", {})
                 self._parse_start_params(params)
-                # ---------------------------------------------------------
                 
                 await self._select_adaptive_strategy() 
                 
@@ -223,41 +225,41 @@ class MinerBot(BaseAgent):
             elif command == 'stop': self.handle_stop()
             
         elif msg_type == "materials.requirements.v1":
-            # --- FIX CRÍTICO: El payload contiene los requisitos (BOM) ---
+            
             self.requirements = payload.copy()
             self.logger.info(f"Requisitos de materiales recibidos: {self.requirements}")
             
-            # --- MODIFICACION: LEER COORDENADAS DE TRABAJO DEL CONTEXTO ---
+            # --- MODIFICACION CLAVE: APLICAR DESPLAZAMIENTO A LA POSICIÓN DE MINERÍA ---
             target_zone = message.get("context", {}).get("target_zone")
             if target_zone and all(key in target_zone for key in ['x', 'z']):
-                 # Convertir a int de forma segura
-                 x = int(target_zone['x'])
-                 z = int(target_zone['z'])
                  
-                 # Aplicar las coordenadas X y Z al bot
-                 self.mining_position.x = x
-                 self.mining_position.z = z
+                 base_x = int(target_zone['x'])
+                 base_z = int(target_zone['z'])
+                 
+                 # 1. Almacenar el ancla original (sólo para referencia, se puede omitir si no se necesita)
+                 self._base_build_anchor = Vec3(base_x, 0, base_z)
+                 
+                 # 2. Calcular el desplazamiento (10 bloques por cada ciclo de minería previo completado)
+                 offset = self._mining_offset * 10
+                 
+                 # 3. Aplicar las coordenadas desplazadas
+                 self.mining_position.x = base_x + offset
+                 self.mining_position.z = base_z + offset
                  
                  try:
-                     # 1. Obtener la altura real de la superficie en las nuevas coordenadas
-                     y_surface = self.mc.getHeight(x, z)
-                     # 2. Establecer la Y del bot a una posición de superficie visible + 1
+                     y_surface = self.mc.getHeight(self.mining_position.x, self.mining_position.z)
                      self.mining_position.y = y_surface + 1 
                  except Exception:
-                     # Fallback si la conexión falla al obtener altura
                      self.mining_position.y = 65 
                      
-                 # --- FIX CRÍTICO: REINICIAR LA ESTRATEGIA AL MOVERSE ---
-                 # Forzar a que la estrategia (Vertical o Grid) se reinicie en la nueva posición.
-                 # Esto borra los anclajes internos de la estrategia (GridSearch, VerticalSearch).
+                 # 4. Reiniciar la estrategia para que use la nueva posición (esto es crucial)
                  self.current_strategy_instance.__init__(self.mc, self.logger)
                  
-                 self.logger.info(f"Posicion de mineria reajustada al centro de construccion: ({self.mining_position.x}, {self.mining_position.y}, {self.mining_position.z})")
+                 self.logger.info(f"Posicion de mineria reajustada. Base: ({base_x}, {base_z}). Nuevo Inicio (Offset={offset}): ({self.mining_position.x}, {self.mining_position.y}, {self.mining_position.z})")
             # -------------------------------------------------------------
             
             await self._select_adaptive_strategy()
             
-            # FIX: Aseguramos que inicie si está IDLE o WAITING y recibe requisitos.
             if self.state in (AgentState.IDLE, AgentState.WAITING): 
                 self.state = AgentState.RUNNING
 
@@ -286,7 +288,6 @@ class MinerBot(BaseAgent):
                 self.logger.info(f"Usando posición del jugador: {new_x}, {new_z}")
             except Exception as e:
                 self.logger.warning(f"No se pudo obtener posición jugador: {e}")
-                # Si falla todo, mantenemos la posición actual (no reseteamos a 10,10)
                 if new_x is None: new_x = self.mining_position.x
                 if new_z is None: new_z = self.mining_position.z
 
@@ -371,15 +372,12 @@ class MinerBot(BaseAgent):
                 self.current_strategy_name = new_strategy_name
                 self.logger.info(f"Estrategia de mineria adaptada a: {new_strategy_name}")
                 
-                # --- CORRECCIÓN 2: ELIMINADO EL RESET FORZADO A 10,10,65 ---
-                # Si se cambia a GRID, ya no forzamos la posición a 10,10.
-                # Dejamos que la estrategia GridSearch use la posición actual del bot como ancla.
+                # Si se cambia a GRID, se reinician los anclajes internos para que la estrategia GridSearch se base en la nueva posición desplazada
                 if new_strategy_name == "grid":
                      self.current_strategy_instance.start_x = None 
                      self.current_strategy_instance.start_z = None
                      self.current_strategy_instance.mining_y_level = None
                      self.logger.info("Estrategia GridSearch iniciada en la posición actual.")
-                # ----------------------------------------------------------
                      
             else:
                 self.logger.error(f"Estrategia adaptativa '{new_strategy_name}' no encontrada. Usando vertical.")
