@@ -112,7 +112,8 @@ COMMAND_SCHEMA = dict(BASE_SCHEMA, **{
         "payload": {
             "type": "object",
             "properties": {
-                "command_name": {"type": "string", "enum": ["pause", "resume", "stop", "update", "start", "build", "plan", "bom", "fulfill", "set"]},
+                # CORRECCIÓN CRÍTICA: Se añade 'status' al enum para que los comandos pasen la validación.
+                "command_name": {"type": "string", "enum": ["pause", "resume", "stop", "update", "start", "build", "plan", "bom", "fulfill", "set", "status"]},
                 "parameters": {"type": "object"}, # Parámetros del comando (ej: x, y, z)
             },
             "required": ["command_name"],

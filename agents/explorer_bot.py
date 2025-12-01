@@ -27,7 +27,7 @@ class ExplorerBot(BaseAgent):
         super().__init__(agent_id, mc_connection, message_broker)
         
         # FIX: Inicialización para Checkpointing
-        self.exploration_size = 0
+        self.exploration_size = 30 # Tamaño por defecto
         self.exploration_position: Vec3 = Vec3(0, 0, 0)
         self.map_data: Dict[Tuple[int, int, int], str] = {}
         
@@ -202,7 +202,7 @@ class ExplorerBot(BaseAgent):
                 self.map_data = {} # Resetear el mapa
                 self.state = AgentState.RUNNING
             
-            # FIX: Aseguramos el manejo explícito de stop, pause y resume
+            # El Validator ahora permite 'stop', por lo que el comando funciona correctamente.
             elif command == 'stop': 
                 self.handle_stop()
             
@@ -212,17 +212,26 @@ class ExplorerBot(BaseAgent):
             elif command == 'resume': 
                 self.handle_resume()
             
-            # FIX: Manejamos el comando 'explorer set range <int>'
+            # Manejamos el comando 'explorer set range=<int>'
             elif command == 'set':
-                if len(args) >= 2 and args[0] == 'range':
+                
+                # Lógica para manejar comandos como 'set range=5'
+                arg_map = {}
+                for arg in args:
+                    if '=' in arg:
+                        key, val = arg.split('=', 1)
+                        arg_map[key] = val
+                
+                # CORRECCIÓN: Buscamos el valor de 'range' directamente en el mapa de argumentos parseados
+                if 'range' in arg_map:
                     try:
-                        new_range = int(args[1])
+                        new_range = int(arg_map['range'])
                         self.exploration_size = new_range
                         self.logger.info(f"Rango de exploración actualizado a: {new_range}x{new_range}")
                     except ValueError:
-                        self.logger.error(f"Valor de rango inválido: {args[1]}")
+                        self.logger.error(f"Valor de rango inválido: {arg_map['range']}")
             
-            # FIX: Manejamos el comando 'explorer status' para dar feedback
+            # El Validator ahora permite 'status', por lo que el comando funciona correctamente.
             elif command == 'status':
                 await self._publish_status()
 
@@ -236,7 +245,7 @@ class ExplorerBot(BaseAgent):
         new_size = self.exploration_size if self.exploration_size > 0 else 30 
         new_x, new_z = None, None
         
-        # Lógica de parseo
+        # Lógica de parseo: Se reusa esta lógica ya que 'start' usa el formato x=val z=val range=val
         arg_map = {}
         for arg in args:
              if '=' in arg:
@@ -314,7 +323,7 @@ class ExplorerBot(BaseAgent):
         }
         return bom
     
-    # --- NUEVA FUNCIONALIDAD: Reportar estado a chat (Para /explorer status) ---
+    # --- FUNCIONALIDAD: Reportar estado a chat (Para /explorer status) ---
     async def _publish_status(self):
         """Publica el estado actual de ExplorerBot en el chat de Minecraft."""
         status_message = (
