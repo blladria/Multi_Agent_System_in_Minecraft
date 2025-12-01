@@ -1,11 +1,22 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 from agents.base_agent import BaseAgent, AgentState
 from mcpi.vec3 import Vec3
 from mcpi import block # Necesario para definir el marcador
+from datetime import datetime, timezone
+
+# Definición de materiales de interés (para el mapa)
+EXPLORATION_BLOCKS = {
+    block.DIRT.id: "dirt",
+    block.GRASS.id: "dirt", 
+    block.STONE.id: "stone",
+    block.COBBLESTONE.id: "stone", # Cobblestone cuenta como stone para la minería profunda
+    block.WATER.id: "water",
+    block.LAVA.id: "lava",
+    block.AIR.id: "air",
+}
 
 class ExplorerBot(BaseAgent):
     """
@@ -14,175 +25,208 @@ class ExplorerBot(BaseAgent):
     """
     def __init__(self, agent_id: str, mc_connection, message_broker):
         super().__init__(agent_id, mc_connection, message_broker)
-        self.exploration_params: Dict[str, Any] = {}
-        self.map_data: Dict[str, Any] = {}
-        self.target_position: Vec3 = None
-        self.exploration_range = 30  # Rango por defecto
-        self.is_exploring = False
         
-        # VISUALIZACIÓN: Marcador Azul (Lana Azul = data 11)
+        self.map_data: Dict[Tuple[int, int, int], str] = {}
+        self.exploration_size = 0
+        self.exploration_position: Vec3 = Vec3(0, 0, 0)
+        
+        # Marcador Azul (Lana Azul = data 11)
         self._set_marker_properties(block.WOOL.id, 11)
 
+    # --- Ciclo Perceive-Decide-Act ---
+    
     async def perceive(self):
         if self.broker.has_messages(self.agent_id):
             message = await self.broker.consume_queue(self.agent_id)
             await self._handle_message(message)
 
     async def decide(self):
-        if self.state == AgentState.RUNNING and not self.is_exploring and self.target_position:
-            self.logger.info(f"Decidiendo iniciar exploracion en {self.target_position.x}, {self.target_position.z}")
-            self.is_exploring = True
-        elif self.state == AgentState.RUNNING and not self.target_position and not self.is_exploring:
-            self.state = AgentState.IDLE
+        # La lógica de ExplorerBot es simple: solo tiene una tarea
+        if self.state == AgentState.RUNNING and not self.map_data and self.exploration_size > 0:
+            self.logger.info(f"Decidiendo iniciar exploración en {self.exploration_position} con tamaño {self.exploration_size}")
+        elif self.state == AgentState.RUNNING and not self.map_data and self.exploration_size == 0:
+             self.state = AgentState.IDLE # Si no hay parámetros para explorar
 
     async def act(self):
-        if self.state == AgentState.RUNNING and self.is_exploring:
-            self.logger.info(f"Act: Explorando area alrededor de ({self.target_position.x}, {self.target_position.z})...")
+        if self.state == AgentState.RUNNING and self.exploration_size > 0:
             
-            # --- VISUALIZACIÓN: Simular movimiento del agente ---
-            # Clona la posición de inicio para mover el marcador
-            scan_pos = self.target_position.clone()
+            # El ACT es iniciar la exploración y esperar a que termine (o se pause)
+            await self._explore_area(self.exploration_position, self.exploration_size)
             
-            # Mover el marcador al punto de inicio de la exploración
-            self._update_marker(scan_pos)
-
-            # Simular exploración paso a paso (moviendo el marcador)
-            for i in range(3):
-                 # Mover el marcador simulando el escaneo
-                scan_pos.x += 5
-                scan_pos.z -= 5 # Mover en diagonal
+            # Lógica post-exploración
+            if self.state == AgentState.RUNNING and self.map_data: # Terminó sin ser pausado
+                await self._publish_map_data()
+                self.exploration_size = 0
+                self.map_data = {}
+                self.state = AgentState.IDLE
+                self._clear_marker()
+            
+            elif self.state == AgentState.PAUSED:
+                # Si se pausó, el bucle de exploración ya salió y el estado es PAUSED.
+                self.logger.info("ACT terminó debido a una pausa. Esperando 'resume'.")
+            
+            elif self.state == AgentState.ERROR:
+                self.logger.error("ACT terminó en ERROR.")
                 
-                # Intentar actualizar la altura del marcador a la altura actual del terreno
+            else:
+                 self.state = AgentState.IDLE
+
+
+    # --- Lógica Específica del Agente ---
+    
+    async def _explore_area(self, start_pos: Vec3, size: int):
+        """
+        Explora un área con pausas asíncronas, permitiendo la pausa en tiempo real
+        y mostrando el movimiento del marcador.
+        """
+        self.logger.info(f"Iniciando exploración de {size}x{size} bloques...")
+        self.map_data = {}
+        
+        # Determinar el centro del área explorada
+        target_center_x = int(start_pos.x + size // 2)
+        target_center_z = int(start_pos.z + size // 2)
+        
+        # Guardar el centro del área en el contexto
+        self.context["target_zone"] = {"x": target_center_x, "z": target_center_z}
+        
+        # Posición inicial (x, z) de la esquina superior-oeste
+        x_start = int(start_pos.x)
+        z_start = int(start_pos.z)
+
+        # Mover el bot a la posición inicial (visual) antes de empezar
+        try:
+            y_surface_start = self.mc.getHeight(x_start, z_start)
+            self.exploration_position = Vec3(x_start, y_surface_start + 2, z_start) 
+            self._update_marker(self.exploration_position) 
+        except Exception:
+             pass
+
+        for x in range(x_start, x_start + size):
+            for z in range(z_start, z_start + size):
+                
+                # --- FIX CRÍTICO: Verificación de pausa/stop ---
+                if self.state != AgentState.RUNNING:
+                    # Si es PAUSED, salimos inmediatamente. Si es STOPPED/ERROR, también.
+                    self.logger.info(f"Exploración interrumpida, estado: {self.state.name}.")
+                    return 
+
+                # 1. Movimiento del marcador y pausa asíncrona
                 try:
-                    # FIX CRÍTICO: Asegura que la posición Y sea la altura del bloque superior + 1 (donde está de pie el agente/marcador)
-                    scan_pos.y = self.mc.getHeight(int(scan_pos.x), int(scan_pos.z)) + 1 
-                except Exception:
-                    pass 
+                    # Obtener altura de la superficie en la posición actual
+                    y_surface = self.mc.getHeight(x, z)
                     
-                self._update_marker(scan_pos)
-                self.logger.debug(f"Movimiento Explorer a ({scan_pos.x}, {scan_pos.y}, {scan_pos.z})")
-                await asyncio.sleep(1.0) 
-            # --------------------------------------------------
+                    # Mover marcador (visualización de movimiento)
+                    self.exploration_position = Vec3(x, y_surface + 2, z) 
+                    self._update_marker(self.exploration_position)
+                    
+                    # Pausa ASÍNCRONA: Cede el control al event loop para procesar mensajes
+                    await asyncio.sleep(0.01) # Muy corto para inmediatez en comandos
+                    
+                    # 2. Obtener bloques y registrarlos
+                    for y in range(y_surface - 2, y_surface + 3): # Rango de 5 bloques alrededor de la superficie
+                        block_id = self.mc.getBlock(x, y, z)
+                        block_name = EXPLORATION_BLOCKS.get(block_id, "unknown")
+                        
+                        if block_name not in ("air", "water", "lava", "unknown"):
+                             self.map_data[(x, y, z)] = block_name
+                             break 
+                        
+                except Exception as e:
+                    self.logger.error(f"Error en MC (getHeight/setBlock durante exploración): {e}")
+                    await asyncio.sleep(0.1) # Pausa si hay error
 
-            
-            self.map_data = await self._scan_terrain()
-            
-            await self._publish_map_data()
-            
-            self.is_exploring = False
-            self.target_position = None
-            self.state = AgentState.IDLE
-            self._clear_marker() # Limpiar el marcador al finalizar
 
-    # --- Manejo de Mensajes y Comandos (Omitido para brevedad) ---
     async def _handle_message(self, message: Dict[str, Any]):
         msg_type = message.get("type")
-        command = message.get("payload", {}).get("command_name")
-        params = message.get("payload", {}).get("parameters", {})
-        
+        payload = message.get("payload", {})
+
         if msg_type.startswith("command."):
+            command = payload.get("command_name")
             if command == 'start':
-                self._parse_start_command(params)
+                params = payload.get("parameters", {})
+                self._parse_start_params(params)
+                self.map_data = {} # Resetear el mapa
                 self.state = AgentState.RUNNING
             elif command == 'pause': self.handle_pause()
-            elif command == 'resume': self.handle_resume()
+            elif command == 'resume': 
+                # Si estamos pausados, reanudamos.
+                self.handle_resume()
             elif command == 'stop': self.handle_stop()
-            elif command == 'set': self._parse_set_command(params)
 
-    def _parse_start_command(self, params: Dict[str, Any]):
-        try:
-            args = params.get('args', []) 
-            x = int(args[0].split('=')[1]) if len(args) > 0 and args[0].startswith('x=') else 0
-            z = int(args[1].split('=')[1]) if len(args) > 1 and args[1].startswith('z=') else 0
-            for arg in args:
-                if arg.startswith('range='):
-                    self.exploration_range = int(arg.split('=')[1])
-                    
-            # Obtiene la altura actual del terreno y añade +1 para la posición de pie/marcador
-            self.target_position = Vec3(x, self.mc.getHeight(x, z) + 1, z)
-            self.logger.info(f"Parametros de exploracion cargados: Centro=({x}, {z}), Rango={self.exploration_range}")
-            
-            if self.is_exploring:
-                self.logger.warning("Exploracion activa. La nueva solicitud interrumpe el proceso.")
-                self.is_exploring = False
-                
-        except Exception as e:
-            self.logger.error(f"Error al parsear comando START para ExplorerBot: {e}")
-            self.mc.postToChat(f"ERROR: /explorer start requiere x=<int> z=<int> validos. Error: {e}")
-
-    def _parse_set_command(self, params: Dict[str, Any]):
+    def _parse_start_params(self, params: Dict[str, Any]):
+        """Actualiza la posición inicial (esquina) y el tamaño del área a explorar."""
         args = params.get('args', [])
-        if len(args) >= 2 and args[0] == 'range':
+        
+        # Valores por defecto
+        new_size = 30 # Rango por defecto (originalmente 30)
+        new_x, new_z = 0, 0
+        
+        # Lógica de parseo
+        arg_map = {}
+        for arg in args:
+             if '=' in arg:
+                 key, val = arg.split('=', 1)
+                 arg_map[key] = val
+        
+        if 'size' in arg_map:
+            try: new_size = int(arg_map['size'])
+            except: pass
+        if 'x' in arg_map:
+            try: new_x = int(arg_map['x'])
+            except: pass
+        if 'z' in arg_map:
+            try: new_z = int(arg_map['z'])
+            except: pass
+
+
+        if 'x' not in arg_map or 'z' not in arg_map:
             try:
-                self.exploration_range = int(args[1])
-                self.logger.info(f"Rango de exploracion actualizado a {self.exploration_range}")
-            except ValueError:
-                self.mc.postToChat("ERROR: /explorer set range requiere un valor entero.")
+                pos = self.mc.player.getTilePos()
+                if 'x' not in arg_map: new_x = pos.x
+                if 'z' not in arg_map: new_z = pos.z
+                self.logger.info(f"Usando posición del jugador: {new_x}, {new_z}")
+            except Exception as e:
+                self.logger.warning(f"No se pudo obtener posición jugador: {e}")
 
-    # --- Lógica de Terreno (FUNCIONAL) ---
+        # La posición de inicio de la exploración es la esquina (no el centro)
+        self.exploration_size = new_size
+        self.exploration_position.x = new_x
+        self.exploration_position.z = new_z
+        self.logger.info(f"Configuración de exploración: {new_size}x{new_size} desde ({new_x}, Z={new_z})")
 
-    async def _scan_terrain(self) -> Dict[str, Any]:
-        """
-        Escanea el terreno usando list comprehension y funciones agregadas 
-        (map, min/max) para un análisis funcional de la varianza.
-        """
-        self.logger.info("Escaneando el terreno (ANALISIS FUNCIONAL)...")
-        
-        # FIX: Restar 1 a la posición del agente para obtener el nivel de la superficie (grass/dirt)
-        start_x, start_z = int(self.target_position.x), int(self.target_position.z)
-        half_range = self.exploration_range // 2
-        
-        # --- APLICACIÓN FUNCIONAL (List Comprehension/Generators) ---
-        
-        # Generador que recorre todas las posiciones y obtiene la altura
-        height_generator = (
-            self.mc.getHeight(x, z)
-            for x in range(start_x - half_range, start_x + half_range)
-            for z in range(start_z - half_range, start_z + half_range)
-        )
-        # La conversión a lista permite el uso de min/max y cálculos posteriores
-        heights = list(height_generator)
-        
-        # Análisis funcional de los datos recolectados
-        min_height = min(heights)
-        max_height = max(heights)
-
-        # -------------------------------------------------------------
-
-        variance = max_height - min_height
-        
-        optimal_zone = {
-            "center": {"x": start_x, "z": start_z, "y_avg": (max_height + min_height) / 2},
-            "size": self.exploration_range,
-            "variance": variance
-        }
-
-        await asyncio.sleep(3) 
-
-        return {
-            "exploration_area": f"({start_x-half_range},{start_z-half_range}) a ({start_x+half_range},{start_z+half_range})",
-            # Se utiliza solo un valor de altura para el payload ya que map.v1 espera una lista de números
-            "elevation_map": [optimal_zone['center']['y_avg']], 
-            "optimal_zone": optimal_zone,
-            "is_flat": variance <= 5 
-        }
 
     async def _publish_map_data(self):
-        map_payload = self.map_data
+        """Publica los datos del mapa y la ubicación recomendada al BuilderBot."""
+        
+        if not self.context.get("target_zone"):
+             self.context["target_zone"] = {"x": int(self.exploration_position.x + self.exploration_size // 2),
+                                            "z": int(self.exploration_position.z + self.exploration_size // 2)}
+             
+        # Simular cálculo de materiales: 50 Stone y 50 Dirt como requerimiento inicial
+        required_materials = self._calculate_materials_needed()
         
         map_message = {
-            "type": "map.v1",
+            "type": "map.data.v1",
             "source": self.agent_id,
             "target": "BuilderBot",
             "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "payload": {
-                "exploration_area": map_payload.get("exploration_area"),
-                "elevation_map": map_payload.get("elevation_map"), # Contiene el y_avg
-                "optimal_zone": map_payload.get("optimal_zone"),
+                "map": [{"coords": str(k), "block": v} for k, v in self.map_data.items()],
+                "target_location": self.context["target_zone"]
             },
-            "status": "SUCCESS" if map_payload.get('is_flat') else "PENDING",
-            "context": {"task_id": "EXP-" + datetime.now().strftime("%H%M%S")}
+            "context": {"required_bom": required_materials},
+            "status": "SUCCESS"
         }
-        
         await self.broker.publish(map_message)
-        self.logger.info(f"Datos de mapa (map.v1) publicados. Varianza: {map_payload['optimal_zone']['variance']}")
+        self.logger.info(f"Datos de mapa y zona objetivo publicado a BuilderBot. BOM solicitado: {required_materials}")
+        
+    def _calculate_materials_needed(self) -> Dict[str, int]:
+        """
+        Define el BoM inicial requerido por el BuilderBot (50 Stone, 50 Dirt).
+        """
+        bom = {
+            "stone": 50,  # Stone para estructura (VerticalSearch)
+            "dirt": 50,   # Dirt para superficie (GridSearch)
+        }
+        self.logger.info(f"BOM simulado (Simple Shelter): {bom}")
+        return bom

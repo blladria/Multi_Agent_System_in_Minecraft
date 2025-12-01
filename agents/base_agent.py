@@ -141,9 +141,10 @@ class BaseAgent(ABC):
                 # 2. DECIDE & ACT: Solo se ejecutan si el agente está trabajando activamente
                 if self.state == AgentState.RUNNING: 
                     await self.decide()
-                    await self.act()
+                    # Si act es muy largo (como ExplorerBot), debe usar await sleep para no bloquear
+                    await self.act() 
                 
-                # Pequeña pausa para no saturar la CPU
+                # Pausa para no saturar la CPU. CRÍTICO para el procesamiento de mensajes.
                 await asyncio.sleep(0.1) 
 
             except Exception as e:
@@ -168,7 +169,8 @@ class BaseAgent(ABC):
         """Maneja el comando 'resume'."""
         if self.state == AgentState.PAUSED:
             self._load_checkpoint()
-            self.state = AgentState.RUNNING
+            # Al reanudar, siempre debe volver a RUNNING. El método 'decide' se encargará de reevaluar.
+            self.state = AgentState.RUNNING 
             # self.mc.postToChat(f"[{self.agent_id}] REANUDADO.") # El Manager hace el postToChat
 
     def handle_stop(self):
