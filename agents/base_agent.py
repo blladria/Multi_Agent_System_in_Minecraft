@@ -162,21 +162,21 @@ class BaseAgent(ABC):
         if self.state in (AgentState.RUNNING, AgentState.WAITING):
             self._save_checkpoint()
             self.state = AgentState.PAUSED
-            self.mc.postToChat(f"[{self.agent_id}] PAUSADO.")
+            # self.mc.postToChat(f"[{self.agent_id}] PAUSADO.") # El Manager hace el postToChat
 
     def handle_resume(self):
         """Maneja el comando 'resume'."""
         if self.state == AgentState.PAUSED:
             self._load_checkpoint()
             self.state = AgentState.RUNNING
-            self.mc.postToChat(f"[{self.agent_id}] REANUDADO.")
+            # self.mc.postToChat(f"[{self.agent_id}] REANUDADO.") # El Manager hace el postToChat
 
     def handle_stop(self):
         """Maneja el comando 'stop'."""
         # Stop es prioritario, funciona desde cualquier estado
         self._save_checkpoint()
         self.state = AgentState.STOPPED 
-        self.mc.postToChat(f"[{self.agent_id}] DETENIDO (Fin del proceso).")
+        # self.mc.postToChat(f"[{self.agent_id}] DETENIDO (Fin del proceso).") # El Manager hace el postToChat
         self.logger.info(f"{self.agent_id} deteniendo operaciones.")
 
     # --- Métodos de Checkpointing y Sincronización ---

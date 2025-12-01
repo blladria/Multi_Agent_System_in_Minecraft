@@ -168,8 +168,8 @@ class MinerBot(BaseAgent):
             
             # 4. Actualizamos la Y de la posición de minería interna a la superficie
             #    cuando es VerticalSearch y ha tocado fondo, esto se reinicia en el siguiente act.
-            if self.current_strategy_name == "vertical" and self.mining_position.y < VerticalSearchStrategy.MIN_SAFE_Y:
-                 self.mining_position.y = display_y # Reinicia la Y al nivel de la superficie (según el marker_position_visible)
+            # Nota: Esta línea debe ser controlada por la estrategia, no directamente aquí.
+            # Se ha eliminado el reset forzado a 'display_y' para evitar un bucle no deseado.
             
             # Continúa con la ejecución de la estrategia
             await self.current_strategy_instance.execute(
@@ -250,7 +250,8 @@ class MinerBot(BaseAgent):
             
             await self._select_adaptive_strategy()
             
-            if self.state == AgentState.IDLE: 
+            # FIX: Aseguramos que inicie si está IDLE o WAITING y recibe requisitos.
+            if self.state in (AgentState.IDLE, AgentState.WAITING): 
                 self.state = AgentState.RUNNING
 
 

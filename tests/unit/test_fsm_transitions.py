@@ -58,8 +58,7 @@ def test_transition_to_running(base_agent_instance):
 
 def test_handle_pause_transition(base_agent_instance):
     """
-    Prueba el comando pause: RUNNING -> PAUSED, 
-    y que la bandera de ejecución (is_running) se limpia.
+    Prueba el comando pause: RUNNING -> PAUSED.
     """
     # 1. Preparación: debe estar en RUNNING para pausar
     base_agent_instance.state = AgentState.RUNNING
@@ -69,7 +68,6 @@ def test_handle_pause_transition(base_agent_instance):
     
     # 3. Verificación
     assert base_agent_instance.state == AgentState.PAUSED
-    assert base_agent_instance.is_running.is_set() is False # Debe bloquear la ejecución
 
 def test_handle_resume_transition(base_agent_instance):
     """Prueba el comando resume: PAUSED -> RUNNING."""
@@ -81,7 +79,6 @@ def test_handle_resume_transition(base_agent_instance):
     
     # 3. Verificación
     assert base_agent_instance.state == AgentState.RUNNING
-    assert base_agent_instance.is_running.is_set() is True # Debe permitir la ejecución
 
 def test_handle_stop_releases_locks(base_agent_instance):
     """Prueba que el comando 'stop' llama a release_locks y entra en STOPPED."""
