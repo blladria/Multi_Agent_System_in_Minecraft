@@ -184,6 +184,8 @@ class BaseAgent(ABC):
             self.is_running.clear()
             self._save_checkpoint() # Preservar el contexto
             self.state = AgentState.PAUSED
+            # Confirmación por chat SOLUCIONADA
+            self.mc.postToChat(f"{self.agent_id}: PAUSADO. Contexto guardado.")
 
     def handle_resume(self):
         """Maneja el comando 'resume': restaura la ejecución."""
@@ -191,12 +193,16 @@ class BaseAgent(ABC):
             self._load_checkpoint() # Restaurar contexto
             self.is_running.set()
             self.state = AgentState.RUNNING
+            # Confirmación por chat SOLUCIONADA
+            self.mc.postToChat(f"{self.agent_id}: REANUDADO. Reanudando ciclo.")
 
     def handle_stop(self):
         """Maneja el comando 'stop': termina la operación de forma segura."""
         self.is_running.clear() # Bloquea el ciclo para la terminación
         self._save_checkpoint() # Persistir el estado final
         self.state = AgentState.STOPPED # Esto libera el lock
+        # Confirmación por chat SOLUCIONADA
+        self.mc.postToChat(f"{self.agent_id}: DETENIDO. Estado finalizado y locks liberados.")
         self.logger.info(f"{self.agent_id} ha recibido STOP y esta TERMINANDO.")
 
     # --- Métodos de Checkpointing y Sincronización ---

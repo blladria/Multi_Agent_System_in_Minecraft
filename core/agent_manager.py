@@ -192,6 +192,30 @@ class AgentManager:
                 logger.error(f"Error en el monitoreo de chat: {e}")
                 await asyncio.sleep(5)
 
+    async def _broadcast_control_command(self, command_name: str):
+        """Broadcasts a control message to all active agents."""
+        
+        control_msg = {
+            "type": f"command.control.v1",
+            "source": "Manager",
+            "target": "", # Se establecerá en el bucle
+            "timestamp": datetime.utcnow().isoformat() + 'Z',
+            "payload": {
+                "command_name": command_name, # pause, resume, stop
+                "parameters": {}, 
+            },
+            "status": "PENDING",
+        }
+        
+        self.mc.postToChat(f"Manager: Broadcast - '{command_name.upper()}' a todos los agentes.")
+        
+        for agent_id, agent_instance in self.agents.items():
+            # Enviar mensaje a cada agente
+            msg_to_send = control_msg.copy()
+            msg_to_send["target"] = agent_id
+            await self.broker.publish(msg_to_send)
+            self.logger.info(f"Comando '{command_name}' enviado a {agent_id}.")
+
     async def _process_chat_command(self, entity_id, raw_message: str):
         """Convierte comandos de chat en mensajes de control JSON usando if/elif/else."""
         
@@ -221,11 +245,16 @@ class AgentManager:
             if subcommand == 'status':
                 self.mc.postToChat(f"STATUS: {self._get_system_status()}")
             elif subcommand == 'stop':
-                # Implementación pendiente de stop general
-                self.mc.postToChat("Manager: Comando 'stop' en desarrollo.")
+                await self._broadcast_control_command("stop") 
+            elif subcommand == 'pause':
+                await self._broadcast_control_command("pause")
+            elif subcommand == 'resume':
+                await self._broadcast_control_command("resume")
             elif subcommand == 'help':
-                # Se actualiza el mensaje de ayuda para el nuevo formato sin '/'
-                self.mc.postToChat("Manager: Comandos disponibles: agent status, <AgentName> <comando>") 
+                # Solucionado: Mensaje de ayuda completo (Ajustado el formato para chat)
+                help_message = "Manager: Comandos generales: agent <help|status|pause|resume|stop>. "
+                help_message += "Agentes: <AgentName> <comando> (ej: explorer start x=0 z=0)"
+                self.mc.postToChat(help_message)
             
         # 2. Comando dirigido a un Agente específico (ej: /miner start)
         elif command_root.capitalize() + 'Bot' in self.agents:
