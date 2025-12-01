@@ -15,8 +15,8 @@ VALID_MSG_BASE = {
     "source": "BuilderBot",
     "target": "MinerBot",
     "timestamp": VALID_TIMESTAMP,
-    # ACTUALIZADO: Usando 'stone' y 'dirt'
-    "payload": {"stone": 10, "dirt": 20},
+    # CORRECCIÓN: Usando 'cobblestone' y 'dirt' para coincidir con el esquema actualizado
+    "payload": {"cobblestone": 10, "dirt": 20},
     "status": "PENDING",
     "context": {"task_id": "TEST-001"}
 }
@@ -62,8 +62,8 @@ def test_invalid_missing_required_field_fail():
 def test_invalid_type_in_payload_fail():
     """Prueba que el mensaje falla si el tipo de dato en el payload es incorrecto."""
     invalid_msg = VALID_MSG_BASE.copy()
-    # 'stone' debe ser entero, no string
-    invalid_msg["payload"] = {"stone": "diez", "dirt": 20} 
+    # 'cobblestone' debe ser entero, no string
+    invalid_msg["payload"] = {"cobblestone": "diez", "dirt": 20} 
     with pytest.raises(ValidationError):
         validate_message(invalid_msg)
 
