@@ -55,7 +55,7 @@ class ExplorerBot(BaseAgent):
             await self._explore_area(self.exploration_position, self.exploration_size)
             
             # Lógica post-exploración
-            if self.state == AgentState.RUNNING and self.map_data: # Terminó sin ser pausado
+            if self.state == AgentState.RUNNING and self.map_data: # Terminó sin ser pausado y encontró datos
                 await self._publish_map_data()
                 self.exploration_size = 0
                 self.map_data = {}
@@ -70,6 +70,9 @@ class ExplorerBot(BaseAgent):
                 self.logger.error("ACT terminó en ERROR.")
                 
             else:
+                 # Caso: Exploración completada pero no se encontró ningún material (self.map_data vacío).
+                 # CRITICAL FIX: Debemos resetear el tamaño para evitar que act() se ejecute en el siguiente ciclo.
+                 self.exploration_size = 0 
                  self.state = AgentState.IDLE
                  
     # --- Checkpointing (Necesario para Pause/Resume) ---
