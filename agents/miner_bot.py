@@ -217,7 +217,8 @@ class MinerBot(BaseAgent):
             elif command == 'stop': self.handle_stop()
             
         elif msg_type == "materials.requirements.v1":
-            self.requirements = payload
+            # --- FIX CRÍTICO: El payload contiene los requisitos (BOM) ---
+            self.requirements = payload.copy()
             self.logger.info(f"Requisitos de materiales recibidos: {self.requirements}")
             
             # --- MODIFICACION: LEER COORDENADAS DE TRABAJO DEL CONTEXTO ---

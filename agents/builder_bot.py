@@ -229,14 +229,19 @@ class BuilderBot(BaseAgent):
 
             # 2. Extraer el BOM del contexto (asumido patrón de comunicación)
             self.required_bom = context.get("required_bom", {}) 
+            
+            # --- MODIFICACIÓN CLAVE: Publicar requisitos al MinerBot inmediatamente ---
+            # Esto se hace después de recibir el mapa y de haber extraído el BOM.
+            if self.required_bom:
+                await self._publish_requirements_to_miner()
+            # -------------------------------------------------------------------------
 
             self.logger.info(f"Mapa recibido. Zona objetivo: {self.target_zone}. BOM: {self.required_bom}")
             
             # Si estaba esperando mapa, reanuda la decisión
             if self.state == AgentState.WAITING: 
                 self.state = AgentState.RUNNING 
-            # --- FIX CRÍTICO: Si está IDLE, se le da luz verde para pasar a RUNNING ---
-            # Esto forzará el siguiente ciclo decide() a evaluarse y moverlo a WAITING si no hay materiales.
+            # Si está IDLE, se le da luz verde para pasar a RUNNING para que decide() lo mueva a WAITING.
             elif self.state == AgentState.IDLE: 
                 self.state = AgentState.RUNNING
 
@@ -251,6 +256,20 @@ class BuilderBot(BaseAgent):
                 self.state = AgentState.RUNNING
                 
     # --- Comunicación Externa ---
+    
+    async def _publish_requirements_to_miner(self):
+        """Publica el BOM (Bill of Materials) como un mensaje de requerimientos al MinerBot."""
+        requirements_message = {
+            "type": "materials.requirements.v1",
+            "source": self.agent_id,
+            "target": "MinerBot",
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+            "payload": self.required_bom, # El payload son los requisitos
+            "status": "PENDING",
+            "context": {"target_zone": self.target_zone} # Incluir la zona de trabajo para el minero
+        }
+        await self.broker.publish(requirements_message)
+        self.logger.info(f"Requisitos (BOM) publicados a MinerBot: {self.required_bom}")
     
     async def _publish_build_complete(self):
         """Notifica al sistema que la construcción ha finalizado."""
