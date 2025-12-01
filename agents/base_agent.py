@@ -16,10 +16,10 @@ class AgentState(Enum):
     """
     IDLE = auto()      # Esperando un comando
     RUNNING = auto()   # Ejecutando activamente su tarea
-    PAUSED = auto()    # Temporalmente detenido, con el contexto preservado
-    WAITING = auto()   # Bloqueado, esperando datos o recursos
-    STOPPED = auto()   # Terminado de forma segura con estado y datos persistidos
-    ERROR = auto()     # Ocurrió un problema irrecuperable; el agente se detiene
+    PAUSED = auto()    # Temporalmente detenido, escucha mensajes pero no actúa
+    WAITING = auto()   # Bloqueado por lógica interna (ej: falta materiales)
+    STOPPED = auto()   # Estado FINAL. El ciclo termina y el agente se apaga.
+    ERROR = auto()     # Estado FINAL por fallo.
 
 class BaseAgent(ABC):
     """
@@ -28,8 +28,8 @@ class BaseAgent(ABC):
     """
     def __init__(self, agent_id: str, mc_connection, message_broker):
         self.agent_id = agent_id
-        self.mc = mc_connection  # Conexión a Minecraft (obtenida de mcpi.Minecraft.create())
-        self.broker = message_broker # Referencia al MessageBroker (core/message_broker.py)
+        self.mc = mc_connection  # Conexión a Minecraft
+        self.broker = message_broker # Referencia al MessageBroker
 
         # FSM
         self._state = AgentState.IDLE
@@ -37,9 +37,6 @@ class BaseAgent(ABC):
         
         # Checkpointing y Contexto 
         self.context = {} 
-
-        self.is_running = asyncio.Event()
-        self.is_running.set() # Empieza listo para correr (si se llama a run_cycle)
 
         # VISUALIZACIÓN (NUEVO)
         self.marker_block_id = block.WOOL.id # Default: Lana
@@ -61,6 +58,10 @@ class BaseAgent(ABC):
         """Transición de estado atómica y logueada."""
         prev_state = self._state
         
+        # Si el estado no cambia, no hacemos nada (evita spam de logs)
+        if prev_state == new_state:
+            return
+
         # Lógica de liberación de locks (Requerimiento de Sincronización)
         if new_state in (AgentState.STOPPED, AgentState.ERROR):
             self.release_locks()
@@ -71,101 +72,78 @@ class BaseAgent(ABC):
         
         # Logging estructurado del cambio de estado
         self.logger.info(f"TRANSITION: {prev_state.name} -> {new_state.name}")
-        
-        # Notificar a dependientes (se implementaría en el MessageBroker/Observer Pattern)
-        # self.broker.notify_dependents(self.agent_id, new_state)
 
-    # --- Métodos de Visualización (NUEVO) ---
+    # --- Métodos de Visualización ---
     def _set_marker_properties(self, block_id, data):
         """Establece las propiedades del bloque marcador (ID y Data)."""
         self.marker_block_id = block_id
         self.marker_block_data = data
         
     def _update_marker(self, new_pos: Vec3):
-        """
-        Mueve y actualiza el bloque marcador del agente. 
-        CORRECCIÓN: Se coloca el marcador *en* la posición Y del agente (posición de pie).
-        """
-        # 1. Borrar el marcador antiguo
+        """Mueve y actualiza el bloque marcador del agente."""
         try:
-            # Asegura que las coordenadas sean enteras
+            # Borrar antiguo
             old_x, old_y, old_z = int(self.marker_position.x), int(self.marker_position.y), int(self.marker_position.z)
             self.mc.setBlock(old_x, old_y, old_z, block.AIR.id)
-        except Exception:
-             # Ignorar errores si no hay conexión real o si es la primera vez
-             pass
-
-        # 2. Establecer la nueva posición base
-        self.marker_position.x = new_pos.x
-        self.marker_position.y = new_pos.y
-        self.marker_position.z = new_pos.z
-        
-        # 3. Colocar el nuevo marcador
-        # Se convierte a int
-        new_x, new_y, new_z = int(new_pos.x), int(new_pos.y), int(new_pos.z)
-        try:
+            
+            # Actualizar posición
+            self.marker_position.x = new_pos.x
+            self.marker_position.y = new_pos.y
+            self.marker_position.z = new_pos.z
+            
+            # Colocar nuevo
+            new_x, new_y, new_z = int(new_pos.x), int(new_pos.y), int(new_pos.z)
             self.mc.setBlock(new_x, new_y, new_z, self.marker_block_id, self.marker_block_data)
-        except Exception as e:
-            self.logger.error(f"Fallo al colocar el marcador en MC: {e}")
+        except Exception:
+             pass
             
     def _clear_marker(self):
         """Borra el bloque marcador de su posición actual."""
         try:
-            # Borra el bloque en la posición (Y)
             x, y, z = int(self.marker_position.x), int(self.marker_position.y), int(self.marker_position.z)
             self.mc.setBlock(x, y, z, block.AIR.id)
         except Exception:
              pass
-    # --- FIN Métodos de Visualización ---
-
 
     # --- Métodos del Ciclo Perceive-Decide-Act (PDP) ---
 
     @abstractmethod
     async def perceive(self):
-        """
-        Observa el entorno (Minecraft) y el MessageBroker.
-        Actualiza el estado interno o el contexto del agente. 
-        """
+        """Observa el entorno y procesa mensajes."""
         pass
 
     @abstractmethod
     async def decide(self):
-        """
-        Determina la siguiente acción basándose en el estado interno y el contexto.
-        Puede cambiar el estado (ej: a WAITING si faltan recursos). 
-        """
+        """Determina la siguiente acción."""
         pass
 
     @abstractmethod
     async def act(self):
-        """
-        Ejecuta la acción decidida (ej: enviar un mensaje, mover el jugador, colocar un bloque).
-        """
+        """Ejecuta la acción."""
         pass
     
-    # --- Bucle de Ejecución Concurrente (CORRECCIÓN CRÍTICA) ---
+    # --- Bucle de Ejecución Concurrente (CORREGIDO PARA PAUSA) ---
 
     async def run_cycle(self):
-        """Bucle principal de ejecución del agente. Usa asyncio para concurrencia."""
-        self.state = AgentState.IDLE  # INICIA EN IDLE (Estado inicial)
+        """
+        Bucle principal. NO SE BLOQUEA EN PAUSA, solo salta decide/act.
+        Esto permite recibir el comando RESUME o STOP mientras está pausado.
+        """
+        self.state = AgentState.IDLE
         self.logger.info("Ciclo de ejecución iniciado.")
 
-        # Este bucle simula la operación continua del agente
+        # El bucle se mantiene vivo mientras no sea un estado terminal
         while self.state not in (AgentState.STOPPED, AgentState.ERROR):
-            await self.is_running.wait() # Bloquea aquí si el agente está PAUSED
-            
             try:
-                # CORRECCIÓN: La percepción debe ocurrir *siempre* para que el agente
-                # pueda recibir comandos y transicionar de IDLE/PAUSED/WAITING a RUNNING.
+                # 1. PERCEIVE: Siempre se ejecuta para leer mensajes (Start, Pause, Resume, Stop)
                 await self.perceive()
 
-                if self.state != AgentState.IDLE: 
+                # 2. DECIDE & ACT: Solo se ejecutan si el agente está trabajando activamente
+                if self.state == AgentState.RUNNING: 
                     await self.decide()
                     await self.act()
-                    
-                # Espera breve para evitar el consumo excesivo de CPU
-                # Este sleep es crucial para el event loop y para permitir la entrada de comandos
+                
+                # Pequeña pausa para no saturar la CPU
                 await asyncio.sleep(0.1) 
 
             except Exception as e:
@@ -179,42 +157,35 @@ class BaseAgent(ABC):
     # --- Control de Ciclo de Vida (Manejo de Comandos) ---
 
     def handle_pause(self):
-        """Maneja el comando 'pause': detiene temporalmente la ejecución."""
-        if self.state == AgentState.RUNNING:
-            self.is_running.clear()
-            self._save_checkpoint() # Preservar el contexto
+        """Maneja el comando 'pause'."""
+        # Solo pausamos si estamos corriendo o esperando
+        if self.state in (AgentState.RUNNING, AgentState.WAITING):
+            self._save_checkpoint()
             self.state = AgentState.PAUSED
-            # Confirmación por chat SOLUCIONADA
-            self.mc.postToChat(f"{self.agent_id}: PAUSADO. Contexto guardado.")
+            self.mc.postToChat(f"[{self.agent_id}] PAUSADO.")
 
     def handle_resume(self):
-        """Maneja el comando 'resume': restaura la ejecución."""
+        """Maneja el comando 'resume'."""
         if self.state == AgentState.PAUSED:
-            self._load_checkpoint() # Restaurar contexto
-            self.is_running.set()
+            self._load_checkpoint()
             self.state = AgentState.RUNNING
-            # Confirmación por chat SOLUCIONADA
-            self.mc.postToChat(f"{self.agent_id}: REANUDADO. Reanudando ciclo.")
+            self.mc.postToChat(f"[{self.agent_id}] REANUDADO.")
 
     def handle_stop(self):
-        """Maneja el comando 'stop': termina la operación de forma segura."""
-        self.is_running.clear() # Bloquea el ciclo para la terminación
-        self._save_checkpoint() # Persistir el estado final
-        self.state = AgentState.STOPPED # Esto libera el lock
-        # Confirmación por chat SOLUCIONADA
-        self.mc.postToChat(f"{self.agent_id}: DETENIDO. Estado finalizado y locks liberados.")
-        self.logger.info(f"{self.agent_id} ha recibido STOP y esta TERMINANDO.")
+        """Maneja el comando 'stop'."""
+        # Stop es prioritario, funciona desde cualquier estado
+        self._save_checkpoint()
+        self.state = AgentState.STOPPED 
+        self.mc.postToChat(f"[{self.agent_id}] DETENIDO (Fin del proceso).")
+        self.logger.info(f"{self.agent_id} deteniendo operaciones.")
 
     # --- Métodos de Checkpointing y Sincronización ---
 
     def _save_checkpoint(self):
-        """Serializa y almacena el estado y contexto para reanudación."""
-        self.logger.debug(f"Punto de control guardado. Contexto: {self.context}")
+        self.logger.debug(f"Checkpoint guardado. Ctx: {self.context}")
 
     def _load_checkpoint(self):
-        """Carga el estado y contexto desde el último checkpoint."""
-        self.logger.debug(f"Punto de control cargado. Contexto: {self.context}")
+        self.logger.debug(f"Checkpoint cargado. Ctx: {self.context}")
 
     def release_locks(self):
-        """Libera todos los locks (ej. regiones de minería) al detenerse o fallar."""
-        self.logger.info("Locks y recursos espaciales liberados.")
+        self.logger.info("Locks liberados.")

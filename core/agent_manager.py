@@ -11,283 +11,208 @@ from mcpi.minecraft import Minecraft
 from core.message_broker import MessageBroker
 from agents.base_agent import BaseAgent, AgentState 
 
-# Configuración del logger para el Manager (Mantener la referencia para la configuración global)
-logger = logging.getLogger("AgentManager")
+# Configuración del logger global para capturar logs antes de instanciar la clase
+logger = logging.getLogger("AgentManagerGlobal")
 
-# --- Función de Configuración de Logging (Exportada para Tests) ---
+# --- Función de Configuración de Logging ---
 def setup_system_logging(log_file_name: str = 'system.log'):
-    """
-    Configura el sistema de logging con handlers para archivo y consola.
-    Permite especificar un nombre de archivo para logs separados (e.g., para tests).
-    """
-    
-    # 1. Asegúrate de que el directorio 'logs' exista
+    """Configura el sistema de logging."""
     LOG_DIR = 'logs'
     if not os.path.exists(LOG_DIR):
         os.makedirs(LOG_DIR)
 
     root_logger = logging.getLogger()
     
-    # --- FIX: GESTIÓN DE HANDLERS PARA TESTS (Limpiar handlers antiguos) ---
+    # Limpiar handlers antiguos para evitar duplicados en tests
     handlers_to_remove = []
     for h in root_logger.handlers:
-        # Cierra y elimina handlers de archivo y de consola para forzar la reconfiguración
         if isinstance(h, (logging.handlers.RotatingFileHandler, logging.FileHandler, logging.StreamHandler)):
             h.close() 
             handlers_to_remove.append(h)
-    
     for h in handlers_to_remove:
         root_logger.removeHandler(h)
-    # --- FIN FIX ---
 
-    # 2. Formato de Logging Estructurado
     LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     formatter = logging.Formatter(LOG_FORMAT)
 
-    # 3. Handler para Archivo (Persistencia)
     file_handler = logging.handlers.RotatingFileHandler(
-        os.path.join(LOG_DIR, log_file_name),
-        maxBytes=10 * 1024 * 1024, # 10 MB
-        backupCount=5,
-        encoding='utf-8'
+        os.path.join(LOG_DIR, log_file_name), maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'
     )
     file_handler.setFormatter(formatter)
     file_handler.setLevel(logging.DEBUG)
 
-    # 4. Handler para Consola (Necesario para el output)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     console_handler.setLevel(logging.INFO)
 
-    # 5. Configuración del Logger Raíz
     root_logger.setLevel(logging.DEBUG) 
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
     
-    logging.getLogger("LoggingSetup").info(f"Configuracion de logging inicializada. Archivo: {log_file_name}")
+    logging.getLogger("LoggingSetup").info(f"Logging configurado en: {log_file_name}")
 
 # --- CLASE DE AYUDA PARA LA REFLEXIÓN ---
 
 class AgentDiscovery:
-    """Clase estática para el descubrimiento reflexivo de agentes."""
-    
     @staticmethod
     def discover_agents(package_name: str = 'agents') -> list[type[BaseAgent]]:
-        """
-        Escanea un paquete (directorio) dado y devuelve todas las clases que heredan de BaseAgent.
-        Esto implementa la Programación Reflexiva.
-        """
         discovered_agents = []
         try:
-            # Importa dinámicamente el paquete 'agents'
             package = __import__(package_name)
-            
-            # Recorre todos los submódulos dentro del paquete
             for _, name, is_pkg in pkgutil.walk_packages(package.__path__):
                 if not is_pkg:
                     try:
-                        # Importa el módulo completo (e.g., agents.explorer_bot)
                         module = __import__(f"{package_name}.{name}", fromlist=[name])
-                        
-                        # Inspecciona los miembros del módulo en busca de clases de agentes
                         for item_name, item_obj in inspect.getmembers(module, inspect.isclass):
-                            # Verifica si hereda de BaseAgent pero no es la BaseAgent misma
                             if (issubclass(item_obj, BaseAgent) and 
                                 item_obj is not BaseAgent and 
                                 item_obj.__module__.startswith(package_name)):
-                                
                                 discovered_agents.append(item_obj)
-                                logger.info(f"Descubierto agente: {item_name} de {name}")
-                                
+                                logging.getLogger("AgentDiscovery").info(f"Descubierto: {item_name}")
                     except ImportError as e:
-                        logger.error(f"Error al importar módulo {name}: {e}")
-
+                        logging.getLogger("AgentDiscovery").error(f"Error importando {name}: {e}")
         except Exception as e:
-            logger.error(f"Error fatal durante el descubrimiento de agentes: {e}")
-            
+            logging.getLogger("AgentDiscovery").error(f"Error fatal discovery: {e}")
         return discovered_agents
-
 
 # --- CLASE PRINCIPAL: AGENT MANAGER ---
 
 class AgentManager:
-    """
-    Orquesta el sistema, gestiona el ciclo de vida de los agentes y procesa comandos de chat.
-    """
+    """Orquesta el sistema y gestiona el ciclo de vida."""
     def __init__(self, broker: MessageBroker):
-        # LLAMADA CRÍTICA: Configuración para el archivo de log principal
         setup_system_logging(log_file_name='system.log') 
-        
         self.broker = broker
-        # Nota: La conexión a MC ahora usa el método initialize_minecraft para logging
         self.mc = None 
         self.agents: dict[str, BaseAgent] = {}
         self.agent_tasks: dict[str, asyncio.Task] = {}
         self.is_running = False
-        self.logger = logging.getLogger("AgentManager") # FIX: Inicializar el logger como atributo de instancia
+        
+        # FIX: Inicializar logger como atributo de instancia para evitar el error 'has no attribute logger'
+        self.logger = logging.getLogger("AgentManager")
         self.logger.info("Agent Manager inicializado.")
 
     def initialize_minecraft(self):
-        """Conecta a Minecraft y envía un mensaje de estado."""
         try:
-            # Intenta conectarse al servidor (debe estar iniciado en localhost:4711)
             self.mc = Minecraft.create()
-            self.mc.postToChat("Manager: Conexion establecida. Iniciando agentes...")
+            self.mc.postToChat("Manager: Sistema iniciado.")
             self.logger.info("Conexion con Minecraft API exitosa.")
             return True
         except Exception as e:
-            self.logger.error(f"Fallo al conectar con Minecraft. Asegurese de que el servidor este activo. Error: {e}")
+            self.logger.error(f"Fallo conexion MC: {e}")
             return False
             
     async def start_system(self):
-        """Descubre agentes y lanza sus ciclos de ejecución asíncrona."""
         if not self.initialize_minecraft():
             return
 
         AgentClasses = AgentDiscovery.discover_agents()
         if not AgentClasses:
-            self.logger.warning("No se encontraron clases de agentes para iniciar.")
+            self.logger.warning("No se encontraron agentes.")
             return
 
-        # Inicializa e suscribe cada agente
         for AgentClass in AgentClasses:
             agent_id = AgentClass.__name__
-            
-            # 1. Instancia el agente (asumiendo que su __init__ toma ID, mc y broker)
             agent_instance = AgentClass(agent_id, self.mc, self.broker)
             self.agents[agent_id] = agent_instance
-            
-            # 2. Suscribe la cola del agente al broker
             self.broker.subscribe(agent_id)
             
-            # 3. Lanza el ciclo de ejecución como una tarea asíncrona
             task = asyncio.create_task(agent_instance.run_cycle(), name=agent_id)
             self.agent_tasks[agent_id] = task
-            self.logger.info(f"Tarea '{agent_id}' lanzada de forma asincrona.")
+            self.logger.info(f"Agente '{agent_id}' iniciado.")
 
         self.is_running = True
-        self.logger.info("Sistema Multi-Agente completamente lanzado.")
-        
-        # Inicia el monitoreo de comandos de chat
+        self.logger.info("Sistema corriendo. Esperando comandos...")
         await self._chat_command_monitor()
         
     async def _chat_command_monitor(self):
-        """Monitorea el chat de Minecraft para comandos de usuario."""
-        
-        # Limpia los eventos de chat previos
         self.mc.events.clearAll()
-        self.logger.info("Monitoreo de comandos de chat iniciado.")
+        self.logger.info("Monitor de chat activo.")
         
         while self.is_running:
             try:
-                # pollChatPosts es una llamada que lee los comandos del chat
                 posts = self.mc.events.pollChatPosts()
-                
                 for post in posts:
-                    # Convierte el post (ej: '/agent status') a un mensaje JSON interno
                     await self._process_chat_command(post.entityId, post.message)
-                    
-                await asyncio.sleep(0.5) # Pausa breve para ceder el control
-
+                await asyncio.sleep(0.5) 
             except Exception as e:
-                self.logger.error(f"Error en el monitoreo de chat: {e}")
+                self.logger.error(f"Error monitor chat: {e}")
                 await asyncio.sleep(5)
 
     async def _broadcast_control_command(self, command_name: str):
-        """Broadcasts a control message to all active agents."""
+        """Envía un comando de control a TODOS los agentes registrados."""
+        self.logger.info(f"Broadcasting comando: {command_name}")
+        self.mc.postToChat(f"Manager: Ejecutando '{command_name.upper()}' global.")
         
-        control_msg = {
-            "type": f"command.control.v1",
-            "source": "Manager",
-            "target": "", # Se establecerá en el bucle
-            "timestamp": datetime.utcnow().isoformat() + 'Z',
-            "payload": {
-                "command_name": command_name, # pause, resume, stop
-                "parameters": {}, 
-            },
-            "status": "PENDING",
-        }
+        timestamp = datetime.utcnow().isoformat() + 'Z'
         
-        self.mc.postToChat(f"Manager: Broadcast - '{command_name.upper()}' a todos los agentes.")
-        
-        for agent_id, agent_instance in self.agents.items():
-            # Enviar mensaje a cada agente
-            msg_to_send = control_msg.copy()
-            msg_to_send["target"] = agent_id
-            await self.broker.publish(msg_to_send)
-            self.logger.info(f"Comando '{command_name}' enviado a {agent_id}.")
+        for agent_id in self.agents.keys():
+            control_msg = {
+                "type": "command.control.v1",
+                "source": "Manager",
+                "target": agent_id,
+                "timestamp": timestamp,
+                "payload": {
+                    "command_name": command_name, 
+                    "parameters": {}, 
+                },
+                "status": "PENDING",
+            }
+            await self.broker.publish(control_msg)
 
     async def _process_chat_command(self, entity_id, raw_message: str):
-        """Convierte comandos de chat en mensajes de control JSON usando if/elif/else."""
-        
-        raw_message = raw_message.strip()
-        
-        # --- MODIFICACIÓN CLAVE PARA PERMITIR COMANDOS SIN '/' ---
-        # El servidor de MC absorbe el '/', por lo que se recomienda escribir el comando sin él.
-        # Quitamos el '/' si está presente para manejar comandos con o sin él (aunque es mejor sin).
-        command_string = raw_message.lstrip('/')
+        command_string = raw_message.strip().lstrip('/')
+        if not command_string: return
             
-        if not command_string:
-            return # Ignora mensajes vacíos o solo '/'
-            
-        # Lógica de parseo simple (ej: 'agent status' -> ['agent', 'status'])
         parts = command_string.split()
-        
-        if not parts:
-            return # Comando no válido después de limpiar
+        if not parts: return
             
-        command_root = parts[0] # Ej: 'agent' o 'miner'
-        # -------------------------------------------------------------
+        command_root = parts[0] # Ej: 'agent', 'miner', 'explorer'
 
-        # 1. Comando general del Manager (ej: /agent status)
+        # 1. Comandos Generales (Broadcast)
         if command_root == 'agent' and len(parts) > 1:
             subcommand = parts[1].lower()
             
             if subcommand == 'status':
-                self.mc.postToChat(f"STATUS: {self._get_system_status()}")
+                status_msg = " | ".join([f"{name}: {a.state.name}" for name, a in self.agents.items()])
+                self.mc.postToChat(f"ESTADO: {status_msg}")
+            
             elif subcommand == 'stop':
-                await self._broadcast_control_command("stop") 
+                await self._broadcast_control_command("stop")
+                
             elif subcommand == 'pause':
                 await self._broadcast_control_command("pause")
+                
             elif subcommand == 'resume':
                 await self._broadcast_control_command("resume")
+                
             elif subcommand == 'help':
-                # Solucionado: Mensaje de ayuda completo
-                help_message = "Manager: Comandos generales: agent <help|status|pause|resume|stop>. "
-                help_message += "Agentes: <AgentName> <comando> (ej: explorer start x=0 z=0)"
-                self.mc.postToChat(help_message)
+                self.mc.postToChat("Manager: agent [status|pause|resume|stop]")
+                self.mc.postToChat("Agentes: <Nombre> <comando> (ej: explorer start x=10 z=10)")
             
-        # 2. Comando dirigido a un Agente específico (ej: /miner start)
+        # 2. Comandos Específicos (Unicast)
         elif command_root.capitalize() + 'Bot' in self.agents:
-            target_agent_id = command_root.capitalize() + 'Bot' # Reconverte a formato ID (MinerBot)
-            
-            # Verifica que haya un sub-comando
+            target_agent_id = command_root.capitalize() + 'Bot'
             if len(parts) < 2:
-                self.mc.postToChat(f"{target_agent_id}: Falta el sub-comando (start, pause, etc.).")
+                self.mc.postToChat(f"Faltan argumentos para {target_agent_id}")
                 return
 
-            # Crea un mensaje de control JSON (command.control.v1)
             control_msg = {
                 "type": "command.control.v1",
                 "source": "Manager",
                 "target": target_agent_id,
                 "timestamp": datetime.utcnow().isoformat() + 'Z',
                 "payload": {
-                    "command_name": parts[1], # start, pause, resume, etc.
-                    # Los parámetros se pasan como un diccionario simple de ejemplo
+                    "command_name": parts[1], 
                     "parameters": {"args": parts[2:]}, 
                 },
                 "status": "PENDING",
             }
-            # Envía el mensaje al agente a través del broker
             await self.broker.publish(control_msg)
             
-        # 3. Comando no reconocido
         else:
-            # Se actualiza el mensaje de error para el nuevo formato sin '/'
-            self.mc.postToChat(f"Comando '{raw_message}' no reconocido. Use agent help.")
-            
+            # Comando desconocido
+            pass
+    
     def _get_system_status(self):
-        """Recopila el estado de todos los agentes."""
-        status = ", ".join([f"{name}: {agent.state.name}" for name, agent in self.agents.items()])
-        return status or "Ningun agente activo."
+        # Método auxiliar si se necesita status interno
+        return {name: agent.state.name for name, agent in self.agents.items()}
