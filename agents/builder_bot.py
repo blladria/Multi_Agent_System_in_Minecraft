@@ -1,4 +1,3 @@
-# agents/builder_bot.py (MODIFIED)
 # -*- coding: utf-8 -*-
 import asyncio
 import logging
@@ -36,7 +35,7 @@ SIMPLE_SHELTER_DESIGN = [
     (0, 1, 0, 'dirt'), (1, 1, 0, 'dirt'), (2, 1, 0, 'dirt'),
     (0, 1, 1, 'dirt'),                       (2, 1, 1, 'dirt'),
     (0, 1, 2, 'dirt'), (1, 1, 2, 'dirt'), (2, 1, 2, 'dirt'),
-    (1, 1, 1, 'air'), # Apertura de la puerta
+    (1, 1, 1, 'air'), # Apertura de la puerta (Usamos AIR para dejar el hueco)
     
     # Capa Y=2 (Paredes - Cobblestone con hueco central - Simula ventana/altura)
     (0, 2, 0, 'cobblestone'), (1, 2, 0, 'cobblestone'), (2, 2, 0, 'cobblestone'),
@@ -110,8 +109,7 @@ class BuilderBot(BaseAgent):
                 self.state = AgentState.WAITING 
             elif not self._check_inventory():
                 self.logger.info("Esperando materiales del MinerBot.")
-                # Si faltan materiales, forzamos a WAITING
-                self.state = AgentState.WAITING 
+                self.state = AgentState.WAITING # Esperar materiales
             else:
                  # Todo listo: iniciar/continuar construcción
                 self.logger.info("Materiales listos y zona definida. Iniciando construcción.")
@@ -131,6 +129,9 @@ class BuilderBot(BaseAgent):
             except Exception:
                 pass # Ignorar error de visualización
             
+            # 0. FIX: Limpiar el marcador ANTES de construir para que no quede la lana flotando
+            self._clear_marker()
+            
             # 1. Construir la estructura
             await self._build_structure(Vec3(center_x, 0, center_z)) 
             
@@ -140,6 +141,12 @@ class BuilderBot(BaseAgent):
                 self.required_bom = {} # Limpiar BoM
                 self.state = AgentState.IDLE
                 await self._publish_build_complete()
+                
+                # Volver a colocar el marcador en IDLE para visibilidad
+                try:
+                    self._update_marker(Vec3(center_x, y_surface + 1, center_z))
+                except Exception:
+                    pass
             else:
                  self.logger.warning("Construcción interrumpida. Estado guardado.")
 
@@ -147,13 +154,13 @@ class BuilderBot(BaseAgent):
     async def _build_structure(self, center_pos: Vec3):
         """
         Construye la estructura "Simple Shelter" usando la posición central
-        y asegurando que el piso esté en la superficie (Ground Placement Fix).
+        y asegurando que el piso esté a ras de la superficie (Ground Placement Fix).
         """
         center_x, center_z = int(center_pos.x), int(center_pos.z)
         
         try:
-             # FIX CRÍTICO: Obtener la altura de la superficie en el centro de la zona.
-             # start_y_surface será el nivel y=0 (el piso) de nuestro diseño.
+             # FIX 1: Obtener la altura de la superficie en el centro de la zona.
+             # start_y_surface SERÁ LA BASE (Y=0) DEL PISO. Esto soluciona la flotación.
              start_y_surface = self.mc.getHeight(center_x, center_z) 
         except Exception:
              self.logger.warning("No se pudo obtener la altura de la superficie. Usando y=65.")
@@ -163,7 +170,7 @@ class BuilderBot(BaseAgent):
         # Para que el centro de la casa 3x3 esté en (center_x, center_z), 
         # el punto de inicio (x_base, z_base) debe ser el centro - 1.
         x_base = center_x - 1
-        y_base = start_y_surface 
+        y_base = start_y_surface # FIX 2: La base del piso comienza en la superficie
         z_base = center_z - 1
         
         self.logger.info(f"Iniciando construcción de Simple Shelter en base: ({x_base}, {y_base}, {z_base})")
@@ -218,7 +225,7 @@ class BuilderBot(BaseAgent):
 
         self.logger.info("Construcción finalizada con éxito.")
 
-    # --- Manejo de Mensajes ---
+    # --- Manejo de Mensajes (Resto de métodos sin cambio) ---
 
     async def _handle_message(self, message: Dict[str, Any]):
         msg_type = message.get("type")
@@ -237,6 +244,7 @@ class BuilderBot(BaseAgent):
             context = message.get("context", {})
 
             # Recibe el mapa y la zona objetivo del ExplorerBot
+            # Usamos el campo 'optimal_zone.center' del payload para la posición central, si existe
             optimal_zone_center = payload.get("optimal_zone", {}).get("center", {})
 
             # 1. Extraer la zona objetivo
