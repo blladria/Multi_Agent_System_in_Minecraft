@@ -1,3 +1,4 @@
+# agents/builder_bot.py (MODIFIED)
 # -*- coding: utf-8 -*-
 import asyncio
 import logging
@@ -78,7 +79,7 @@ class BuilderBot(BaseAgent):
         return all(self.current_inventory.get(material, 0) >= required_qty 
                    for material, required_qty in self.required_bom.items())
                    
-    # --- NUEVO MÉTODO: Cálculo del BOM (Responsabilidad del BuilderBot) ---
+    # --- Cálculo del BOM (Responsabilidad del BuilderBot) ---
     def _calculate_bom_for_structure(self) -> Dict[str, int]:
         """
         Calcula el Bill of Materials (BoM) total necesario para construir
@@ -89,10 +90,6 @@ class BuilderBot(BaseAgent):
             if material_key != 'air':
                 # Utilizamos una expresión funcional simple para contar:
                 bom[material_key] = bom.get(material_key, 0) + 1
-        
-        # Si 'stone' está presente debido a un error en el diseño anterior, 
-        # o si quieres consolidar ambos, puedes hacerlo aquí. 
-        # Pero ahora, solo 'cobblestone' y 'dirt' deberían estar presentes.
         
         self.logger.info(f"BOM calculado para Simple Shelter (Cobblestone/Dirt): {bom}")
         return bom
@@ -109,10 +106,12 @@ class BuilderBot(BaseAgent):
         if self.state == AgentState.RUNNING:
             if not self.target_zone:
                 self.logger.info("Esperando mapa del ExplorerBot.")
-                self.state = AgentState.WAITING # Esperar mapa
+                # Si falta el mapa, forzamos a WAITING
+                self.state = AgentState.WAITING 
             elif not self._check_inventory():
                 self.logger.info("Esperando materiales del MinerBot.")
-                self.state = AgentState.WAITING # Esperar materiales
+                # Si faltan materiales, forzamos a WAITING
+                self.state = AgentState.WAITING 
             else:
                  # Todo listo: iniciar/continuar construcción
                 self.logger.info("Materiales listos y zona definida. Iniciando construcción.")
@@ -238,7 +237,6 @@ class BuilderBot(BaseAgent):
             context = message.get("context", {})
 
             # Recibe el mapa y la zona objetivo del ExplorerBot
-            # Usamos el campo 'optimal_zone.center' del payload para la posición central, si existe
             optimal_zone_center = payload.get("optimal_zone", {}).get("center", {})
 
             # 1. Extraer la zona objetivo
@@ -253,16 +251,17 @@ class BuilderBot(BaseAgent):
             # 3. Publicar requisitos al MinerBot inmediatamente (BuilderBot -> MinerBot)
             if self.required_bom:
                 await self._publish_requirements_to_miner()
-            # -------------------------------------------------------------------------
-
-            self.logger.info(f"Mapa recibido. Zona objetivo: {self.target_zone}. BOM calculado: {self.required_bom}")
             
-            # Si estaba esperando mapa, reanuda la decisión
-            if self.state == AgentState.WAITING: 
-                self.state = AgentState.RUNNING 
-            # Si está IDLE, se le da luz verde para pasar a RUNNING para que decide() lo mueva a WAITING (si faltan materiales).
-            elif self.state == AgentState.IDLE: 
-                self.state = AgentState.RUNNING
+            # 4. TRANSICIÓN CONTROLADA (FIX para el bucle infinito)
+            # Después de publicar el requerimiento, el BuilderBot sabe que debe esperar materiales.
+            # Solo transiciona a RUNNING si ya tiene los materiales (lo cual es improbable aquí).
+            if self._check_inventory():
+                 self.state = AgentState.RUNNING
+            else:
+                 self.state = AgentState.WAITING # Esperar la respuesta del MinerBot/materiales
+            
+            self.logger.info(f"Mapa recibido. Zona objetivo: {self.target_zone}. BOM calculado: {self.required_bom}. Estado: {self.state.name}")
+
 
         elif msg_type == "inventory.v1":
             # Actualiza el inventario local con los datos del MinerBot
