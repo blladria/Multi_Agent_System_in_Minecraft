@@ -87,6 +87,26 @@ class ExplorerBot(BaseAgent):
         self.map_data = self.context.get("map_data", {})
         super()._load_checkpoint()
 
+    # --- NUEVO: Método para obtener suelo sólido (ignora hierba/flores) ---
+    def _get_solid_ground_y(self, x: int, z: int) -> int:
+        """
+        Obtiene la altura del suelo ignorando vegetación (hierba, flores, nieve).
+        """
+        y = self.mc.getHeight(x, z)
+        
+        # Lista de IDs que consideramos "no sólidos" para caminar o que engañan al getHeight:
+        # 0: Air, 6: Sapling, 17: Wood (a veces ramas), 18: Leaves, 31: Grass, 32: Dead Bush, 
+        # 37/38: Flowers, 39/40: Mushrooms, 78: Snow Layer, 175: Tall Grass
+        NON_SOLID_BLOCKS = [0, 6, 18, 31, 32, 37, 38, 39, 40, 78, 106, 175]
+
+        # Buscamos hacia abajo hasta 5 bloques por si estamos encima de un árbol o hierba muy alta
+        for _ in range(5):
+            block_id = self.mc.getBlock(x, y, z)
+            if block_id not in NON_SOLID_BLOCKS:
+                return y # Encontramos suelo firme
+            y -= 1 # Bajamos un bloque
+            
+        return y # Retorno por defecto si no encontramos nada
 
     # --- Lógica Específica del Agente ---
     
@@ -111,8 +131,9 @@ class ExplorerBot(BaseAgent):
 
         # Mover el bot a la posición inicial (visual) antes de empezar
         try:
-            y_surface_start = self.mc.getHeight(x_start, z_start)
-            self.exploration_position = Vec3(x_start, y_surface_start + 2, z_start) 
+            # FIX: Usar _get_solid_ground_y en vez de getHeight
+            y_surface_start = self._get_solid_ground_y(x_start, z_start)
+            self.exploration_position = Vec3(x_start, y_surface_start + 1, z_start) # +1 para estar de pie
             self._update_marker(self.exploration_position) 
         except Exception:
              pass
@@ -128,11 +149,11 @@ class ExplorerBot(BaseAgent):
 
                 # 1. Movimiento del marcador y pausa asíncrona
                 try:
-                    # Obtener altura de la superficie en la posición actual
-                    y_surface = self.mc.getHeight(x, z)
+                    # FIX: Usar _get_solid_ground_y para la altura actual
+                    y_surface = self._get_solid_ground_y(x, z)
                     
                     # Mover marcador (visualización de movimiento)
-                    self.exploration_position = Vec3(x, y_surface + 2, z) 
+                    self.exploration_position = Vec3(x, y_surface + 1, z) 
                     self._update_marker(self.exploration_position)
                     
                     # Pausa ASÍNCRONA: Cede el control al event loop para procesar mensajes

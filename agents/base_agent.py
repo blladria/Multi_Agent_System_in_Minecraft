@@ -81,6 +81,14 @@ class BaseAgent(ABC):
         
     def _update_marker(self, new_pos: Vec3):
         """Mueve y actualiza el bloque marcador del agente."""
+        
+        # --- FIX ANTI-LAG: Si la posición es la misma, no hacer nada ---
+        if (int(self.marker_position.x) == int(new_pos.x) and 
+            int(self.marker_position.y) == int(new_pos.y) and 
+            int(self.marker_position.z) == int(new_pos.z)):
+            return
+        # ---------------------------------------------------------------
+
         try:
             # Borrar antiguo
             old_x, old_y, old_z = int(self.marker_position.x), int(self.marker_position.y), int(self.marker_position.z)
