@@ -11,7 +11,7 @@ from mcpi.minecraft import Minecraft
 from core.message_broker import MessageBroker
 from agents.base_agent import BaseAgent, AgentState 
 
-# Configuración del logger para el Manager
+# Configuración del logger para el Manager (Mantener la referencia para la configuración global)
 logger = logging.getLogger("AgentManager")
 
 # --- Función de Configuración de Logging (Exportada para Tests) ---
@@ -124,7 +124,8 @@ class AgentManager:
         self.agents: dict[str, BaseAgent] = {}
         self.agent_tasks: dict[str, asyncio.Task] = {}
         self.is_running = False
-        logger.info("Agent Manager inicializado.")
+        self.logger = logging.getLogger("AgentManager") # FIX: Inicializar el logger como atributo de instancia
+        self.logger.info("Agent Manager inicializado.")
 
     def initialize_minecraft(self):
         """Conecta a Minecraft y envía un mensaje de estado."""
@@ -132,10 +133,10 @@ class AgentManager:
             # Intenta conectarse al servidor (debe estar iniciado en localhost:4711)
             self.mc = Minecraft.create()
             self.mc.postToChat("Manager: Conexion establecida. Iniciando agentes...")
-            logger.info("Conexion con Minecraft API exitosa.")
+            self.logger.info("Conexion con Minecraft API exitosa.")
             return True
         except Exception as e:
-            logger.error(f"Fallo al conectar con Minecraft. Asegurese de que el servidor este activo. Error: {e}")
+            self.logger.error(f"Fallo al conectar con Minecraft. Asegurese de que el servidor este activo. Error: {e}")
             return False
             
     async def start_system(self):
@@ -145,7 +146,7 @@ class AgentManager:
 
         AgentClasses = AgentDiscovery.discover_agents()
         if not AgentClasses:
-            logger.warning("No se encontraron clases de agentes para iniciar.")
+            self.logger.warning("No se encontraron clases de agentes para iniciar.")
             return
 
         # Inicializa e suscribe cada agente
@@ -162,10 +163,10 @@ class AgentManager:
             # 3. Lanza el ciclo de ejecución como una tarea asíncrona
             task = asyncio.create_task(agent_instance.run_cycle(), name=agent_id)
             self.agent_tasks[agent_id] = task
-            logger.info(f"Tarea '{agent_id}' lanzada de forma asincrona.")
+            self.logger.info(f"Tarea '{agent_id}' lanzada de forma asincrona.")
 
         self.is_running = True
-        logger.info("Sistema Multi-Agente completamente lanzado.")
+        self.logger.info("Sistema Multi-Agente completamente lanzado.")
         
         # Inicia el monitoreo de comandos de chat
         await self._chat_command_monitor()
@@ -175,7 +176,7 @@ class AgentManager:
         
         # Limpia los eventos de chat previos
         self.mc.events.clearAll()
-        logger.info("Monitoreo de comandos de chat iniciado.")
+        self.logger.info("Monitoreo de comandos de chat iniciado.")
         
         while self.is_running:
             try:
@@ -189,7 +190,7 @@ class AgentManager:
                 await asyncio.sleep(0.5) # Pausa breve para ceder el control
 
             except Exception as e:
-                logger.error(f"Error en el monitoreo de chat: {e}")
+                self.logger.error(f"Error en el monitoreo de chat: {e}")
                 await asyncio.sleep(5)
 
     async def _broadcast_control_command(self, command_name: str):
@@ -251,7 +252,7 @@ class AgentManager:
             elif subcommand == 'resume':
                 await self._broadcast_control_command("resume")
             elif subcommand == 'help':
-                # Solucionado: Mensaje de ayuda completo (Ajustado el formato para chat)
+                # Solucionado: Mensaje de ayuda completo
                 help_message = "Manager: Comandos generales: agent <help|status|pause|resume|stop>. "
                 help_message += "Agentes: <AgentName> <comando> (ej: explorer start x=0 z=0)"
                 self.mc.postToChat(help_message)
