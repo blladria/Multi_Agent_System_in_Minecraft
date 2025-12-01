@@ -94,27 +94,29 @@ class MinerBot(BaseAgent):
         if current_block_id == block.AIR.id:
             return False
 
-        # 1. Simular qué material se extrae (DROP logic)
+        # 1. Determinar qué material se "suelta" (DROP logic)
         material_dropped = None
         
         if current_block_id in [block.GRASS.id, block.DIRT.id]:
             material_dropped = "dirt" 
-        elif current_block_id == block.STONE.id:
-            # FIX CRÍTICO: Minar STONE (ID 1) siempre produce COBBLESTONE (ID 4)
+        
+        # FIX CLAVE: Mapear explícitamente STONE y COBBLESTONE a la recolección de 'cobblestone'
+        elif current_block_id in [block.STONE.id, block.COBBLESTONE.id]:
             material_dropped = "cobblestone"
-        elif current_block_id == block.COBBLESTONE.id:
-            material_dropped = "cobblestone"
+            
         elif current_block_id in [block.WOOD.id, block.LEAVES.id]:
             material_dropped = "wood"
         
-        # Para minerales (ej. DIAMOND_ORE), asumimos que el ID del bloque es el nombre del material para la veta
-        for name, id in MATERIAL_MAP.items():
-            if id == current_block_id and name not in ["dirt", "cobblestone", "wood"]:
-                material_dropped = name
-                break
+        # 2. Para otros bloques (minerales), asumimos que el ID del bloque es el nombre del material
+        if material_dropped is None:
+             for name, id in MATERIAL_MAP.items():
+                 # Solo si el nombre del bloque (ej: diamond_ore) coincide con el ID actual
+                 # Y NO es uno de los bloques base ya manejados
+                 if id == current_block_id and name not in ["dirt", "cobblestone", "wood", "stone"]: 
+                      material_dropped = name
+                      break
         
-        
-        # 2. Verificar si el material extraído es un REQUISITO PENDIENTE
+        # Si el material encontrado (ej: 'cobblestone') es un requisito pendiente, se cuenta.
         material_to_count = None
         if material_dropped and material_dropped in self.requirements:
             required_qty = self.requirements.get(material_dropped, 0)
@@ -134,6 +136,7 @@ class MinerBot(BaseAgent):
                 required_qty = self.requirements.get(material_to_count, 0) # Re-obtener la cantidad
                 self.logger.info(f"EXTRAÍDO 1 de {material_to_count}. Total: {self.inventory[material_to_count]}/{required_qty}")
             else:
+                # Se rompió un bloque, pero no se necesitaba o ya se tenía suficiente.
                 self.logger.debug(f"Bloque minado ID:{current_block_id}. Material '{material_dropped}' no requerido o completado. Bloque desechado.")
                 
             return True
@@ -141,7 +144,7 @@ class MinerBot(BaseAgent):
             self.logger.error(f"Error al romper bloque en MC: {e}")
             return False
 
-    # --- Ciclo Perceive-Decide-Act ---
+    # --- Ciclo Perceive-Decide-Act (Resto de métodos sin cambio) ---
     async def perceive(self):
         if self.broker.has_messages(self.agent_id):
             message = await self.broker.consume_queue(self.agent_id)
