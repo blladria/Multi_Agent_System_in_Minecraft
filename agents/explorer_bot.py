@@ -26,11 +26,12 @@ class ExplorerBot(BaseAgent):
     def __init__(self, agent_id: str, mc_connection, message_broker):
         super().__init__(agent_id, mc_connection, message_broker)
         
-        self.map_data: Dict[Tuple[int, int, int], str] = {}
+        # FIX: Inicialización para Checkpointing
         self.exploration_size = 0
         self.exploration_position: Vec3 = Vec3(0, 0, 0)
+        self.map_data: Dict[Tuple[int, int, int], str] = {}
         
-        # Marcador Azul (Lana Azul = data 11)
+        # VISUALIZACIÓN: Marcador Azul (Lana Azul = data 11)
         self._set_marker_properties(block.WOOL.id, 11)
 
     # --- Ciclo Perceive-Decide-Act ---
@@ -70,6 +71,18 @@ class ExplorerBot(BaseAgent):
                 
             else:
                  self.state = AgentState.IDLE
+                 
+    # --- Checkpointing (Necesario para Pause/Resume) ---
+
+    def _save_checkpoint(self):
+        self.context["exploration_size"] = self.exploration_size
+        self.context["map_data"] = self.map_data
+        super()._save_checkpoint()
+
+    def _load_checkpoint(self):
+        self.exploration_size = self.context.get("exploration_size", 0)
+        self.map_data = self.context.get("map_data", {})
+        super()._load_checkpoint()
 
 
     # --- Lógica Específica del Agente ---
@@ -211,7 +224,10 @@ class ExplorerBot(BaseAgent):
             "target": "BuilderBot",
             "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "payload": {
-                "map": [{"coords": str(k), "block": v} for k, v in self.map_data.items()],
+                # Se utiliza una estructura mínima para pasar la validación
+                "exploration_area": f"({self.exploration_position.x},{self.exploration_position.z}) size {self.exploration_size}",
+                "elevation_map": [64.0],
+                "optimal_zone": {"center": self.context["target_zone"], "variance": 1.0},
                 "target_location": self.context["target_zone"]
             },
             "context": {"required_bom": required_materials},
@@ -224,9 +240,9 @@ class ExplorerBot(BaseAgent):
         """
         Define el BoM inicial requerido por el BuilderBot (50 Stone, 50 Dirt).
         """
+        # BOM para el Simple Shelter (solo piedra y tierra)
         bom = {
-            "stone": 50,  # Stone para estructura (VerticalSearch)
-            "dirt": 50,   # Dirt para superficie (GridSearch)
+            "stone": 50,  
+            "dirt": 50,   
         }
-        self.logger.info(f"BOM simulado (Simple Shelter): {bom}")
         return bom

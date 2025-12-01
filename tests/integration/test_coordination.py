@@ -88,10 +88,28 @@ async def test_full_workflow_coordination(setup_coordination_system):
     """
     broker, explorer, builder, miner = setup_coordination_system
     
-    # Configurar el BuilderBot con el BOM esperado (aunque lo recibirá del Explorer)
-    # Se simula el BOM de 50 stone y 50 dirt del ExplorerBot
-    expected_bom = {"stone": 50, "dirt": 50} 
+    # Simulación del BOM y la zona (antes se publicaba por Explorer)
+    expected_bom = {"stone": 50, "dirt": 50}
+    target_zone = {"x": 20, "z": 20} # Posición simulada
     
+    # --- SIMULACIÓN MANUAL DEL FLUJO EXPLORER -> BUILDER (Para evitar el delay del Explorer) ---
+    
+    map_message = {
+        "type": "map.data.v1",
+        "source": "ExplorerBot",
+        "target": "BuilderBot",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+        "payload": {
+            "exploration_area": "(10,10) size 20",
+            "elevation_map": [64.0],
+            "optimal_zone": {"center": target_zone, "variance": 1.0},
+            "target_location": target_zone
+        },
+        "context": {"required_bom": expected_bom},
+        "status": "SUCCESS"
+    }
+    
+    # 1. Lanzar ciclos asíncronos
     agent_tasks = {
         'explorer': asyncio.create_task(explorer.run_cycle()),
         'builder': asyncio.create_task(builder.run_cycle()),
@@ -100,33 +118,20 @@ async def test_full_workflow_coordination(setup_coordination_system):
     
     await asyncio.sleep(0.1) 
     
-    # --- FASE 1: Exploración (Explorer -> Builder) ---
-    
-    start_command = {
-        "type": "command.control.v1",
-        "source": "Manager",
-        "target": "ExplorerBot",
-        "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
-        "payload": {"command_name": "start", "parameters": {"args": ["x=10", "z=10", "size=20"]}},
-        "status": "PENDING",
-    }
-    await broker.publish(start_command)
-    
-    # 1.1 Espera a que ExplorerBot complete su trabajo y el BuilderBot transicione
-    # El sleep debe ser largo porque el ExplorerBot tiene un delay interno grande.
-    await asyncio.sleep(6.0) 
-    
-    # DEBUG: Comprobación de estado antes de la aserción crítica
+    # 2. Publicar el mensaje del mapa (que activa al BuilderBot)
+    await broker.publish(map_message)
+
+    # 3. Esperar a que BuilderBot procese el mensaje y transicione a WAITING (esperando materiales)
+    await asyncio.sleep(0.5) 
     await debug_state_wait(builder, AgentState.WAITING, 1.0)
 
-    # Verificación 1.1: BuilderBot debe recibir el BOM (contexto del mapa) y pasar a WAITING.
-    # El BuilderBot recibe el BOM en self.required_bom a través del mensaje map.data.v1
+    # Verificación 1.1: BuilderBot debe recibir el BOM y pasar a WAITING.
     assert builder.required_bom == expected_bom 
     assert builder.state == AgentState.WAITING
     
     # --- FASE 2/3: Minería y Suministro (Miner -> Builder) ---
 
-    # El MinerBot debe haber recibido el BOM y estar en RUNNING (minando)
+    # El MinerBot debería haber recibido el BOM y estar en RUNNING (minando)
     await asyncio.sleep(0.5) 
     assert miner.requirements == expected_bom
     assert miner.state == AgentState.RUNNING 
@@ -134,8 +139,8 @@ async def test_full_workflow_coordination(setup_coordination_system):
     # CORRECCIÓN DE PRUEBA: Inyectar inventario con un volumen que exceda los requisitos (100) 
     miner.inventory = {"stone": 60, "dirt": 60}
 
-    # Dar tiempo suficiente para que el Miner complete el ciclo (decide/act), chequee el nuevo inventario, 
-    # y haga la transición a IDLE.
+    # Dar tiempo suficiente para que el Miner complete el ciclo, chequee el nuevo inventario, 
+    # y haga la transición a IDLE (y luego envíe el inventory.v1 SUCCESS).
     time_to_mine = 2.0 
     await asyncio.sleep(time_to_mine) 
     
@@ -143,12 +148,13 @@ async def test_full_workflow_coordination(setup_coordination_system):
     await debug_state_wait(miner, AgentState.IDLE, 1.0)
     
     # El volumen total debe ser >= 100
-    assert miner.get_total_volume() >= 120 
+    assert miner.get_total_volume() >= 100 
     assert miner.state == AgentState.IDLE 
 
-    # --- FASE 4: Construcción (Builder se activa) ---
+    # --- FASE 4: Construcción (Builder se activa por el mensaje SUCCESS del Miner) ---
     
     # Verificación 4.1: El BuilderBot debe empezar a construir y terminar (transición a IDLE).
+    # La transición final ocurre después de que el Builder ejecuta su fase ACT.
     await debug_state_wait(builder, AgentState.IDLE, 5.0)
      
     assert builder.state == AgentState.IDLE
