@@ -55,26 +55,29 @@ class ExplorerBot(BaseAgent):
             await self._explore_area(self.exploration_position, self.exploration_size)
             
             # Lógica post-exploración
-            if self.state == AgentState.RUNNING and self.map_data: # Terminó sin ser pausado y encontró datos
-                await self._publish_map_data()
+            # Verificamos si el estado sigue siendo RUNNING (es decir, la exploración completó sin pausa o error)
+            if self.state == AgentState.RUNNING:
+
+                if self.map_data: # Caso 1: Éxito, encontró datos y debe publicar
+                    await self._publish_map_data()
+                    self.logger.info("Exploración finalizada con éxito. Mapa publicado.")
+                else: 
+                    # Caso 2: Finaliza el escaneo de la zona, pero no encontró datos.
+                    self.logger.warning("Exploración finalizada. No se encontraron materiales/zonas para mapear.")
+                
+                # CRITICAL FIX: En ambos casos de finalización (con o sin datos), 
+                # reiniciamos la tarea y volvemos a IDLE.
                 self.exploration_size = 0
                 self.map_data = {}
                 self.state = AgentState.IDLE
                 self._clear_marker()
             
             elif self.state == AgentState.PAUSED:
-                # Si se pausó, el bucle de exploración ya salió y el estado es PAUSED.
                 self.logger.info("ACT terminó debido a una pausa. Esperando 'resume'.")
             
             elif self.state == AgentState.ERROR:
                 self.logger.error("ACT terminó en ERROR.")
                 
-            else:
-                 # Caso: Exploración completada pero no se encontró ningún material (self.map_data vacío).
-                 # CRITICAL FIX: Debemos resetear el tamaño para evitar que act() se ejecute en el siguiente ciclo.
-                 self.exploration_size = 0 
-                 self.state = AgentState.IDLE
-                 
     # --- Checkpointing (Necesario para Pause/Resume) ---
 
     def _save_checkpoint(self):
@@ -91,20 +94,31 @@ class ExplorerBot(BaseAgent):
     def _get_solid_ground_y(self, x: int, z: int) -> int:
         """
         Obtiene la altura del suelo ignorando vegetación (hierba, flores, nieve).
-        """
-        y = self.mc.getHeight(x, z)
         
-        # Lista de IDs que consideramos "no sólidos" para caminar o que engañan al getHeight:
-        # 0: Air, 6: Sapling, 17: Wood (a veces ramas), 18: Leaves, 31: Grass, 32: Dead Bush, 
-        # 37/38: Flowers, 39/40: Mushrooms, 78: Snow Layer, 175: Tall Grass
-        NON_SOLID_BLOCKS = [0, 6, 18, 31, 32, 37, 38, 39, 40, 78, 106, 175]
+        NOTA: mc.getHeight() devuelve el bloque sólido más alto. Este método
+        lo refina buscando hacia abajo si se encuentran bloques no sólidos
+        que confunden la superficie.
+        """
+        try:
+            y = self.mc.getHeight(x, z)
+        except Exception:
+            return 65 # Fallback
 
-        # Buscamos hacia abajo hasta 5 bloques por si estamos encima de un árbol o hierba muy alta
-        for _ in range(5):
+        # Bloques que NO son suelo sólido para la construcción (tall grass, flores, nieve, hojas, etc.)
+        NON_SOLID_BLOCKS = [
+            block.AIR.id, block.SAPLING.id, block.LEAVES.id, block.COBWEB.id,
+            block.GRASS_TALL.id, block.FLOWER_YELLOW.id, block.FLOWER_CYAN.id, 
+            block.MUSHROOM_BROWN.id, block.MUSHROOM_RED.id, block.SNOW.id, 
+            # Si hay dudas con Wood (17), se puede añadir, pero por defecto lo mantenemos como sólido.
+        ]
+
+        # Buscamos hacia abajo desde la altura reportada
+        for _ in range(5): 
             block_id = self.mc.getBlock(x, y, z)
             if block_id not in NON_SOLID_BLOCKS:
                 return y # Encontramos suelo firme
             y -= 1 # Bajamos un bloque
+            if y < 1: return 1 # Límite inferior
             
         return y # Retorno por defecto si no encontramos nada
 
@@ -164,6 +178,7 @@ class ExplorerBot(BaseAgent):
                         block_id = self.mc.getBlock(x, y, z)
                         block_name = EXPLORATION_BLOCKS.get(block_id, "unknown")
                         
+                        # Si el bloque es un material de interés (no aire/agua/lava/desconocido), lo registramos y pasamos al siguiente (x,z)
                         if block_name not in ("air", "water", "lava", "unknown"):
                              self.map_data[(x, y, z)] = block_name
                              break 
@@ -179,24 +194,42 @@ class ExplorerBot(BaseAgent):
 
         if msg_type.startswith("command."):
             command = payload.get("command_name")
+            params = payload.get("parameters", {})
+            args = params.get('args', [])
+
             if command == 'start':
-                params = payload.get("parameters", {})
                 self._parse_start_params(params)
                 self.map_data = {} # Resetear el mapa
                 self.state = AgentState.RUNNING
+            
+            elif command == 'set':
+                # Manejar /explorer set range <int>
+                if len(args) >= 2 and args[0] == 'range':
+                    try:
+                        new_range = int(args[1])
+                        self.exploration_size = new_range
+                        self.logger.info(f"Rango de exploración actualizado a: {new_range}x{new_range}")
+                        
+                        # Publicar ACK/Update (Requisito opcional, pero buena práctica)
+                        # Nota: En un sistema real, enviaríamos un 'update.status.v1'
+                        
+                    except ValueError:
+                        self.logger.error(f"Valor de rango inválido: {args[1]}")
+                
             elif command == 'pause': self.handle_pause()
             elif command == 'resume': 
-                # Si estamos pausados, reanudamos.
                 self.handle_resume()
             elif command == 'stop': self.handle_stop()
+            # El comando 'status' es gestionado por el Manager (en agent_manager.py), lo ignoramos aquí.
 
     def _parse_start_params(self, params: Dict[str, Any]):
         """Actualiza la posición inicial (esquina) y el tamaño del área a explorar."""
         args = params.get('args', [])
         
         # Valores por defecto
-        new_size = 30 # Rango por defecto (originalmente 30)
-        new_x, new_z = 0, 0
+        # FIX: new_size debe leer la configuración actual si no se proporciona.
+        new_size = self.exploration_size if self.exploration_size > 0 else 30 
+        new_x, new_z = None, None
         
         # Lógica de parseo
         arg_map = {}
@@ -205,8 +238,9 @@ class ExplorerBot(BaseAgent):
                  key, val = arg.split('=', 1)
                  arg_map[key] = val
         
-        if 'size' in arg_map:
-            try: new_size = int(arg_map['size'])
+        # 1. Leer tamaño y coordenadas desde los argumentos
+        if 'range' in arg_map:
+            try: new_size = int(arg_map['range'])
             except: pass
         if 'x' in arg_map:
             try: new_x = int(arg_map['x'])
@@ -216,19 +250,24 @@ class ExplorerBot(BaseAgent):
             except: pass
 
 
-        if 'x' not in arg_map or 'z' not in arg_map:
+        # 2. Si faltan X/Z, usar posición del jugador
+        if new_x is None or new_z is None:
             try:
+                # Usamos la posición del jugador para anclar la exploración
                 pos = self.mc.player.getTilePos()
-                if 'x' not in arg_map: new_x = pos.x
-                if 'z' not in arg_map: new_z = pos.z
-                self.logger.info(f"Usando posición del jugador: {new_x}, {new_z}")
+                if new_x is None: new_x = pos.x
+                if new_z is None: new_z = pos.z
+                self.logger.info(f"Usando posición del jugador para START: ({new_x}, {new_z})")
             except Exception as e:
-                self.logger.warning(f"No se pudo obtener posición jugador: {e}")
+                self.logger.warning(f"No se pudo obtener posición jugador. Usando 0, 0. Error: {e}")
+                if new_x is None: new_x = 0
+                if new_z is None: new_z = 0
 
-        # La posición de inicio de la exploración es la esquina (no el centro)
+        # 3. Aplicar los valores (la posición de inicio es la esquina)
         self.exploration_size = new_size
         self.exploration_position.x = new_x
         self.exploration_position.z = new_z
+        
         self.logger.info(f"Configuración de exploración: {new_size}x{new_size} desde ({new_x}, Z={new_z})")
 
 
@@ -243,7 +282,7 @@ class ExplorerBot(BaseAgent):
         required_materials = self._calculate_materials_needed()
         
         map_message = {
-            "type": "map.v1", # FIX: Cambiado a map.v1 para la validación
+            "type": "map.v1", 
             "source": self.agent_id,
             "target": "BuilderBot",
             "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
