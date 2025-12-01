@@ -58,8 +58,8 @@ MATERIALS_REQUIREMENTS_SCHEMA = dict(BASE_SCHEMA, **{
                 # Se espera un nombre de material (string) y una cantidad (integer)
                 "^.*$": {"type": "integer", "minimum": 1}
             },
-            # REQUISITO ACTUALIZADO: Ahora se requiere 'stone' y 'dirt' (No se usa 'wood')
-            "required": ["stone", "dirt"], 
+            # REQUISITO ACTUALIZADO: Ahora se requiere 'cobblestone' y 'dirt'
+            "required": ["cobblestone", "dirt"], 
             "additionalProperties": True
         }
     })

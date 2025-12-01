@@ -7,14 +7,14 @@ from mcpi import block
 from mcpi.vec3 import Vec3
 from datetime import datetime, timezone
 
-# --- MAPEO DE BLOQUES Y DISEÑO DE LA "Simple Shelter" (DIRT/STONE ONLY) ---
+# --- MAPEO DE BLOQUES Y DISEÑO DE LA "Simple Shelter" (DIRT/COBBLESTONE ONLY) ---
 
 # Mapeo de material (texto) a ID de bloque (Minecraft)
 MATERIAL_MAP = {
     "wood": block.WOOD.id, 
     "wood_planks": block.WOOD_PLANKS.id,
     "stone": block.STONE.id, 
-    "cobblestone": block.COBBLESTONE.id, 
+    "cobblestone": block.COBBLESTONE.id, # Ahora es el material principal para el BuilderBot
     "diamond_ore": block.DIAMOND_ORE.id,
     "glass": block.GLASS.id,
     "glass_pane": block.GLASS_PANE.id,
@@ -23,13 +23,13 @@ MATERIAL_MAP = {
 }
 
 # Diseño de la "Simple Shelter": 3x3x4 (dx, dy, dz, material_key)
-# Materiales: Stone y Dirt. (El piso (y=0) se coloca sobre el bloque de superficie).
+# Materiales: Cobblestone y Dirt. (El piso (y=0) se coloca sobre el bloque de superficie).
 
 SIMPLE_SHELTER_DESIGN = [
-    # Capa Y=0 (Piso): 3x3 Stone
-    (0, 0, 0, 'stone'), (1, 0, 0, 'stone'), (2, 0, 0, 'stone'),
-    (0, 0, 1, 'stone'), (1, 0, 1, 'stone'), (2, 0, 1, 'stone'),
-    (0, 0, 2, 'stone'), (1, 0, 2, 'stone'), (2, 0, 2, 'stone'),
+    # Capa Y=0 (Piso): 3x3 Cobblestone
+    (0, 0, 0, 'cobblestone'), (1, 0, 0, 'cobblestone'), (2, 0, 0, 'cobblestone'),
+    (0, 0, 1, 'cobblestone'), (1, 0, 1, 'cobblestone'), (2, 0, 1, 'cobblestone'),
+    (0, 0, 2, 'cobblestone'), (1, 0, 2, 'cobblestone'), (2, 0, 2, 'cobblestone'),
     
     # Capa Y=1 (Paredes - Dirt con Puerta)
     (0, 1, 0, 'dirt'), (1, 1, 0, 'dirt'), (2, 1, 0, 'dirt'),
@@ -37,16 +37,16 @@ SIMPLE_SHELTER_DESIGN = [
     (0, 1, 2, 'dirt'), (1, 1, 2, 'dirt'), (2, 1, 2, 'dirt'),
     (1, 1, 1, 'air'), # Apertura de la puerta
     
-    # Capa Y=2 (Paredes - Stone con hueco central - Simula ventana/altura)
-    (0, 2, 0, 'stone'), (1, 2, 0, 'stone'), (2, 2, 0, 'stone'),
-    (0, 2, 1, 'stone'),                       (2, 2, 1, 'stone'),
-    (0, 2, 2, 'stone'), (1, 2, 2, 'stone'), (2, 2, 2, 'stone'),
+    # Capa Y=2 (Paredes - Cobblestone con hueco central - Simula ventana/altura)
+    (0, 2, 0, 'cobblestone'), (1, 2, 0, 'cobblestone'), (2, 2, 0, 'cobblestone'),
+    (0, 2, 1, 'cobblestone'),                       (2, 2, 1, 'cobblestone'),
+    (0, 2, 2, 'cobblestone'), (1, 2, 2, 'cobblestone'), (2, 2, 2, 'cobblestone'),
     (1, 2, 1, 'air'), # Hueco interior
     
-    # Capa Y=3 (Techo final - Stone)
-    (0, 3, 0, 'stone'), (1, 3, 0, 'stone'), (2, 3, 0, 'stone'),
-    (0, 3, 1, 'stone'), (1, 3, 1, 'stone'), (2, 3, 1, 'stone'),
-    (0, 3, 2, 'stone'), (1, 3, 2, 'stone'), (2, 3, 2, 'stone'),
+    # Capa Y=3 (Techo final - Cobblestone)
+    (0, 3, 0, 'cobblestone'), (1, 3, 0, 'cobblestone'), (2, 3, 0, 'cobblestone'),
+    (0, 3, 1, 'cobblestone'), (1, 3, 1, 'cobblestone'), (2, 3, 1, 'cobblestone'),
+    (0, 3, 2, 'cobblestone'), (1, 3, 2, 'cobblestone'), (2, 3, 2, 'cobblestone'),
 ]
 
 
@@ -90,7 +90,11 @@ class BuilderBot(BaseAgent):
                 # Utilizamos una expresión funcional simple para contar:
                 bom[material_key] = bom.get(material_key, 0) + 1
         
-        self.logger.info(f"BOM calculado para Simple Shelter: {bom}")
+        # Si 'stone' está presente debido a un error en el diseño anterior, 
+        # o si quieres consolidar ambos, puedes hacerlo aquí. 
+        # Pero ahora, solo 'cobblestone' y 'dirt' deberían estar presentes.
+        
+        self.logger.info(f"BOM calculado para Simple Shelter (Cobblestone/Dirt): {bom}")
         return bom
     # ---------------------------------------------------------------------
 
@@ -185,7 +189,7 @@ class BuilderBot(BaseAgent):
                  block_id = block.AIR.id
             elif material_key in self.current_inventory:
                 if self.current_inventory.get(material_key, 0) > 0:
-                    block_id = MATERIAL_MAP.get(material_key, block.STONE.id)
+                    block_id = MATERIAL_MAP.get(material_key, block.COBBLESTONE.id) # Usar COBBLESTONE como fallback
                 else:
                     # CRÍTICO: Si no hay material, volvemos a WAITING.
                     self.logger.error(f"Fallo de construcción: Material '{material_key}' agotado. Transicionando a WAITING.")
@@ -194,7 +198,7 @@ class BuilderBot(BaseAgent):
                     return
             else:
                  # Si el material no es aire y no está en el inventario (pero se necesita), asumimos un fallback
-                 block_id = MATERIAL_MAP.get(material_key, block.STONE.id)
+                 block_id = MATERIAL_MAP.get(material_key, block.COBBLESTONE.id)
             
             try:
                 # Colocar el bloque en Minecraft

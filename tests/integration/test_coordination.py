@@ -85,28 +85,28 @@ def setup_coordination_system(mock_mc):
 async def test_full_workflow_coordination(setup_coordination_system):
     """
     Prueba el ciclo completo de coordinación: Explorer -> Builder -> Miner -> Builder.
-    (MODIFICADO: BuilderBot calcula el BOM)
+    (MODIFICADO: BuilderBot calcula el BOM, usando Cobblestone)
     """
     broker, explorer, builder, miner = setup_coordination_system
     
-    # BOM esperado: 26 Stone, 8 Dirt (calculado por BuilderBot en base a SIMPLE_SHELTER_DESIGN)
-    expected_bom = {"stone": 26, "dirt": 8}
+    # BOM esperado: 26 Cobblestone, 8 Dirt (calculado por BuilderBot en base a SIMPLE_SHELTER_DESIGN)
+    # NOTA: Los nombres de los materiales ahora son 'cobblestone' y 'dirt'.
+    expected_bom = {"cobblestone": 26, "dirt": 8}
     target_zone = {"x": 20, "z": 20} # Posición simulada
     
     # --- SIMULACIÓN MANUAL DEL FLUJO EXPLORER -> BUILDER (Para evitar el delay del Explorer) ---
     
     map_message = {
-        "type": "map.v1", # FIX: Cambiado a map.v1
+        "type": "map.v1", 
         "source": "ExplorerBot",
         "target": "BuilderBot",
         "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         "payload": {
-            "exploration_area": "(10,10) to (30,30)", # Estructura requerida por map.v1
+            "exploration_area": "(10,10) to (30,30)", 
             "elevation_map": [64.0],
             "optimal_zone": {"center": target_zone, "variance": 1.0},
         },
-        # MODIFICACIÓN CRÍTICA: El ExplorerBot SOLO publica la zona objetivo.
-        # El BOM (required_bom) ya NO se incluye aquí.
+        # El ExplorerBot SOLO publica la zona objetivo.
         "context": {"target_zone": target_zone}, 
         "status": "SUCCESS"
     }
@@ -121,7 +121,6 @@ async def test_full_workflow_coordination(setup_coordination_system):
     await asyncio.sleep(0.1) 
     
     # 2. Publicar el mensaje del mapa (que activa al BuilderBot)
-    # Al recibir el mapa, BuilderBot CALCULA el BOM y lo PUBLICA al MinerBot.
     await broker.publish(map_message)
 
     # 3. Esperar a que BuilderBot procese el mensaje y transicione a WAITING (esperando materiales)
@@ -129,20 +128,20 @@ async def test_full_workflow_coordination(setup_coordination_system):
     await debug_state_wait(builder, AgentState.WAITING, 1.0)
 
     # Verificación 1.1: BuilderBot debe CALCULAR el BOM y pasar a WAITING.
-    # Ahora verificamos el cálculo interno del BuilderBot.
     assert builder.required_bom == expected_bom 
     assert builder.state == AgentState.WAITING
     
     # --- FASE 2/3: Minería y Suministro (Miner -> Builder) ---
 
-    # El MinerBot debería haber recibido el BOM (calculado por Builder) y estar en RUNNING (minando)
+    # El MinerBot debería haber recibido el BOM y estar en RUNNING (minando)
     await asyncio.sleep(0.5) 
     assert miner.requirements == expected_bom
     assert miner.state == AgentState.RUNNING 
 
     # Simular que el Miner ha terminado la minería y envía el mensaje de ÉXITO
-    # Usamos cantidades suficientes para el BOM: 26 Stone, 8 Dirt. Usaremos 30 y 10.
-    miner.inventory = {"stone": 30, "dirt": 10}
+    # Usamos cantidades suficientes para el BOM: 26 Cobblestone, 8 Dirt. Usaremos 30 y 10.
+    # Los nombres de los materiales en el inventario deben coincidir con los del BOM
+    miner.inventory = {"cobblestone": 30, "dirt": 10}
     
     inventory_success_message = {
         "type": "inventory.v1",
@@ -154,7 +153,7 @@ async def test_full_workflow_coordination(setup_coordination_system):
             "total_volume": 40
         },
         "status": "SUCCESS",
-        # El contexto del inventory.v1 ahora refleja el BOM que el MinerBot estaba siguiendo.
+        # El contexto del inventory.v1 refleja el BOM que el MinerBot estaba siguiendo.
         "context": {"required_bom": expected_bom} 
     }
     
@@ -174,7 +173,6 @@ async def test_full_workflow_coordination(setup_coordination_system):
     # --- FASE 4: Construcción (Builder se activa por el mensaje SUCCESS del Miner) ---
     
     # Verificación 4.1: El BuilderBot debe empezar a construir y terminar (transición a IDLE).
-    # La transición final ocurre después de que el Builder ejecuta su fase ACT.
     await debug_state_wait(builder, AgentState.IDLE, 5.0)
      
     assert builder.state == AgentState.IDLE

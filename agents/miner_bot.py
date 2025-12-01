@@ -18,7 +18,7 @@ MATERIAL_MAP = {
     "wood": block.WOOD.id, 
     "wood_planks": block.WOOD_PLANKS.id,
     "stone": block.STONE.id, 
-    "cobblestone": block.COBBLESTONE.id, 
+    "cobblestone": block.COBBLESTONE.id, # COBBLESTONE es clave para la construcción
     "diamond_ore": block.DIAMOND_ORE.id,
     "glass": block.GLASS.id,
     "glass_pane": block.GLASS_PANE.id,
@@ -35,6 +35,7 @@ class MinerBot(BaseAgent):
         super().__init__(agent_id, mc_connection, message_broker)
         
         self.requirements: Dict[str, int] = {}
+        # Inicializa el inventario con las claves de materiales que espera manejar
         self.inventory: Dict[str, int] = {mat: 0 for mat in MATERIAL_MAP.keys()}
         
         # --- POSICIÓN INICIAL DE TRABAJO PREDETERMINADA (Y visible) ---
@@ -87,42 +88,47 @@ class MinerBot(BaseAgent):
         if current_block_id == block.AIR.id:
             return False
 
-        # 1. Identificar material requerido (LÓGICA MEJORADA PARA GRASS/DIRT/STONE)
-        material_found = None
+        # 1. Simular qué material se extrae (DROP logic)
+        material_dropped = None
         
-        if "dirt" in self.requirements and (current_block_id == block.DIRT.id or current_block_id == block.GRASS.id):
-            material_found = "dirt" # Grass counts as dirt
-        elif "wood" in self.requirements and (current_block_id == block.WOOD.id or current_block_id == block.LEAVES.id):
-             material_found = "wood" # Leaves/Wood count as wood (mantenido por si se pide manualmente)
-        else:
-             # Comprobar materiales específicos (piedra, minerales, etc.)
-             for name, id in MATERIAL_MAP.items():
-                 if id == current_block_id and name in self.requirements:
-                      material_found = name
-                      break
+        if current_block_id in [block.GRASS.id, block.DIRT.id]:
+            material_dropped = "dirt" 
+        elif current_block_id == block.STONE.id:
+            # FIX CRÍTICO: Minar STONE (ID 1) siempre produce COBBLESTONE (ID 4)
+            material_dropped = "cobblestone"
+        elif current_block_id == block.COBBLESTONE.id:
+            material_dropped = "cobblestone"
+        elif current_block_id in [block.WOOD.id, block.LEAVES.id]:
+            material_dropped = "wood"
         
-        # 2. Romper el Bloque en Minecraft
+        # Para minerales (ej. DIAMOND_ORE), asumimos que el ID del bloque es el nombre del material para la veta
+        for name, id in MATERIAL_MAP.items():
+            if id == current_block_id and name not in ["dirt", "cobblestone", "wood"]:
+                material_dropped = name
+                break
+        
+        
+        # 2. Verificar si el material extraído es un REQUISITO PENDIENTE
+        material_to_count = None
+        if material_dropped and material_dropped in self.requirements:
+            required_qty = self.requirements.get(material_dropped, 0)
+            current_qty = self.inventory.get(material_dropped, 0)
+
+            if current_qty < required_qty:
+                material_to_count = material_dropped
+                
+        # 3. Romper el Bloque en Minecraft
         try:
             self.mc.setBlock(x, y, z, block.AIR.id)
             
-            # 3. Actualizar Inventario (LÓGICA DE DETENCIÓN CRÍTICA)
-            if material_found:
-                required_qty = self.requirements.get(material_found, 0)
-                current_qty = self.inventory.get(material_found, 0)
-
-                if required_qty > 0 and current_qty < required_qty:
-                    # Solo se cuenta si es stone o dirt (los materiales principales del BuilderBot)
-                    if material_found in ("stone", "dirt"):
-                        self.inventory[material_found] = current_qty + 1
-                        self.logger.info(f"EXTRAÍDO 1 de {material_found}. Total: {self.inventory[material_found]}/{required_qty}")
-                # Si es mineral (ej. diamond_ore) y se encuentra, siempre se cuenta.
-                elif material_found not in ("stone", "dirt", "wood") and required_qty > current_qty:
-                     self.inventory[material_found] = current_qty + 1
-                     self.logger.info(f"EXTRAÍDO 1 de {material_found}. Total: {self.inventory[material_found]}/{required_qty}")
-                else:
-                    self.logger.debug(f"Material {material_found} ya cumplido o no requerido. Bloque desechado.")
+            # 4. Actualizar Inventario (LÓGICA DE DETENCIÓN CRÍTICA)
+            if material_to_count:
+                # El material_to_count ya pasó el filtro de ser un requisito y estar pendiente
+                self.inventory[material_to_count] = self.inventory.get(material_to_count, 0) + 1
+                required_qty = self.requirements.get(material_to_count, 0) # Re-obtener la cantidad
+                self.logger.info(f"EXTRAÍDO 1 de {material_to_count}. Total: {self.inventory[material_to_count]}/{required_qty}")
             else:
-                self.logger.debug(f"Bloque minado ID:{current_block_id} no es material requerido. Bloque desechado.")
+                self.logger.debug(f"Bloque minado ID:{current_block_id}. Material '{material_dropped}' no requerido o completado. Bloque desechado.")
                 
             return True
         except Exception as e:
@@ -314,7 +320,7 @@ class MinerBot(BaseAgent):
     async def _select_adaptive_strategy(self):
         """
         Selecciona la estrategia de minería más adecuada basada en el material más requerido.
-        Prioriza la minería profunda (Vertical/Vein) si se necesita Stone o minerales.
+        Prioriza la minería profunda (Vertical/Vein) si se necesita Cobblestone o minerales.
         """
         if not self.requirements:
             # Estado por defecto
@@ -337,8 +343,8 @@ class MinerBot(BaseAgent):
 
         # 2. Asignación de Estrategia: PRIORIZAR PROFUNDIDAD (Vertical/Vein)
         
-        # Lista de materiales que requieren minería profunda
-        deep_materials = ("stone", "cobblestone", "diamond_ore", "iron_ore", "gold_ore", "lapis_lazuli_ore", "redstone_ore")
+        # Lista de materiales que requieren minería profunda (incluyendo cobblestone como piedra base)
+        deep_materials = ("cobblestone", "stone", "diamond_ore", "iron_ore", "gold_ore", "lapis_lazuli_ore", "redstone_ore")
         
         # Verifica si el material más necesitado es un material profundo
         if most_needed_material in deep_materials:
