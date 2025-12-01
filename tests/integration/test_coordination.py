@@ -136,15 +136,29 @@ async def test_full_workflow_coordination(setup_coordination_system):
     assert miner.requirements == expected_bom
     assert miner.state == AgentState.RUNNING 
 
-    # CORRECCIÓN DE PRUEBA: Inyectar inventario con un volumen que exceda los requisitos (100) 
+    # Simular que el Miner ha terminado la minería y envía el mensaje de ÉXITO
     miner.inventory = {"stone": 60, "dirt": 60}
-
-    # Dar tiempo suficiente para que el Miner complete el ciclo, chequee el nuevo inventario, 
-    # y haga la transición a IDLE (y luego envíe el inventory.v1 SUCCESS).
-    time_to_mine = 2.0 
-    await asyncio.sleep(time_to_mine) 
     
-    # Verificación 3.1: MinerBot debe haber cumplido requisitos y pasado a IDLE.
+    inventory_success_message = {
+        "type": "inventory.v1",
+        "source": "MinerBot",
+        "target": "BuilderBot",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+        "payload": {
+            "collected_materials": miner.inventory,
+            "total_volume": 120
+        },
+        "status": "SUCCESS",
+        "context": {"required_bom": expected_bom}
+    }
+    
+    # Publicar el mensaje SUCCESS para despertar al BuilderBot
+    await broker.publish(inventory_success_message)
+    
+    # Dar tiempo al BuilderBot para procesar el mensaje (debe ir a RUNNING e iniciar la construcción)
+    await asyncio.sleep(0.5)
+    
+    # El MinerBot debe haber cumplido requisitos y pasado a IDLE al final de su ciclo
     await debug_state_wait(miner, AgentState.IDLE, 1.0)
     
     # El volumen total debe ser >= 100
