@@ -85,11 +85,12 @@ def setup_coordination_system(mock_mc):
 async def test_full_workflow_coordination(setup_coordination_system):
     """
     Prueba el ciclo completo de coordinación: Explorer -> Builder -> Miner -> Builder.
+    (MODIFICADO: BuilderBot calcula el BOM)
     """
     broker, explorer, builder, miner = setup_coordination_system
     
-    # Simulación del BOM y la zona (antes se publicaba por Explorer)
-    expected_bom = {"stone": 50, "dirt": 50}
+    # BOM esperado: 26 Stone, 8 Dirt (calculado por BuilderBot en base a SIMPLE_SHELTER_DESIGN)
+    expected_bom = {"stone": 26, "dirt": 8}
     target_zone = {"x": 20, "z": 20} # Posición simulada
     
     # --- SIMULACIÓN MANUAL DEL FLUJO EXPLORER -> BUILDER (Para evitar el delay del Explorer) ---
@@ -103,11 +104,10 @@ async def test_full_workflow_coordination(setup_coordination_system):
             "exploration_area": "(10,10) to (30,30)", # Estructura requerida por map.v1
             "elevation_map": [64.0],
             "optimal_zone": {"center": target_zone, "variance": 1.0},
-            
-            # El BuilderBot busca target_location en el PAYLOAD.
-            # Lo ponemos aquí por si acaso, aunque el BuilderBot lo saca del context.
         },
-        "context": {"required_bom": expected_bom, "target_zone": target_zone}, # FIX: target_zone en el contexto
+        # MODIFICACIÓN CRÍTICA: El ExplorerBot SOLO publica la zona objetivo.
+        # El BOM (required_bom) ya NO se incluye aquí.
+        "context": {"target_zone": target_zone}, 
         "status": "SUCCESS"
     }
     
@@ -121,25 +121,28 @@ async def test_full_workflow_coordination(setup_coordination_system):
     await asyncio.sleep(0.1) 
     
     # 2. Publicar el mensaje del mapa (que activa al BuilderBot)
+    # Al recibir el mapa, BuilderBot CALCULA el BOM y lo PUBLICA al MinerBot.
     await broker.publish(map_message)
 
     # 3. Esperar a que BuilderBot procese el mensaje y transicione a WAITING (esperando materiales)
     await asyncio.sleep(0.5) 
     await debug_state_wait(builder, AgentState.WAITING, 1.0)
 
-    # Verificación 1.1: BuilderBot debe recibir el BOM y pasar a WAITING.
+    # Verificación 1.1: BuilderBot debe CALCULAR el BOM y pasar a WAITING.
+    # Ahora verificamos el cálculo interno del BuilderBot.
     assert builder.required_bom == expected_bom 
     assert builder.state == AgentState.WAITING
     
     # --- FASE 2/3: Minería y Suministro (Miner -> Builder) ---
 
-    # El MinerBot debería haber recibido el BOM y estar en RUNNING (minando)
+    # El MinerBot debería haber recibido el BOM (calculado por Builder) y estar en RUNNING (minando)
     await asyncio.sleep(0.5) 
     assert miner.requirements == expected_bom
     assert miner.state == AgentState.RUNNING 
 
     # Simular que el Miner ha terminado la minería y envía el mensaje de ÉXITO
-    miner.inventory = {"stone": 60, "dirt": 60}
+    # Usamos cantidades suficientes para el BOM: 26 Stone, 8 Dirt. Usaremos 30 y 10.
+    miner.inventory = {"stone": 30, "dirt": 10}
     
     inventory_success_message = {
         "type": "inventory.v1",
@@ -148,10 +151,11 @@ async def test_full_workflow_coordination(setup_coordination_system):
         "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         "payload": {
             "collected_materials": miner.inventory,
-            "total_volume": 120
+            "total_volume": 40
         },
         "status": "SUCCESS",
-        "context": {"required_bom": expected_bom}
+        # El contexto del inventory.v1 ahora refleja el BOM que el MinerBot estaba siguiendo.
+        "context": {"required_bom": expected_bom} 
     }
     
     # Publicar el mensaje SUCCESS para despertar al BuilderBot
@@ -163,8 +167,8 @@ async def test_full_workflow_coordination(setup_coordination_system):
     # El MinerBot debe haber cumplido requisitos y pasado a IDLE al final de su ciclo
     await debug_state_wait(miner, AgentState.IDLE, 1.0)
     
-    # El volumen total debe ser >= 100
-    assert miner.get_total_volume() >= 100 
+    # El volumen total debe ser suficiente
+    assert miner.get_total_volume() >= 34 # 26+8
     assert miner.state == AgentState.IDLE 
 
     # --- FASE 4: Construcción (Builder se activa por el mensaje SUCCESS del Miner) ---
@@ -181,4 +185,4 @@ async def test_full_workflow_coordination(setup_coordination_system):
         task.cancel()
     await asyncio.gather(*agent_tasks.values(), return_exceptions=True)
     
-    print("\n--- PRUEBA DE COORDINACION ASINCRONA EXITOSA ---")
+    print("\n--- PRUEBA DE COORDINACION ASINCRONA (BOM CALCULADO POR BUILDER) EXITOSA ---")
