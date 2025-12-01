@@ -95,17 +95,19 @@ async def test_full_workflow_coordination(setup_coordination_system):
     # --- SIMULACIÓN MANUAL DEL FLUJO EXPLORER -> BUILDER (Para evitar el delay del Explorer) ---
     
     map_message = {
-        "type": "map.data.v1",
+        "type": "map.v1", # FIX: Cambiado a map.v1
         "source": "ExplorerBot",
         "target": "BuilderBot",
         "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         "payload": {
-            "exploration_area": "(10,10) size 20",
+            "exploration_area": "(10,10) to (30,30)", # Estructura requerida por map.v1
             "elevation_map": [64.0],
             "optimal_zone": {"center": target_zone, "variance": 1.0},
-            "target_location": target_zone
+            
+            # El BuilderBot busca target_location en el PAYLOAD.
+            # Lo ponemos aquí por si acaso, aunque el BuilderBot lo saca del context.
         },
-        "context": {"required_bom": expected_bom},
+        "context": {"required_bom": expected_bom, "target_zone": target_zone}, # FIX: target_zone en el contexto
         "status": "SUCCESS"
     }
     

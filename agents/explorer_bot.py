@@ -219,16 +219,15 @@ class ExplorerBot(BaseAgent):
         required_materials = self._calculate_materials_needed()
         
         map_message = {
-            "type": "map.data.v1",
+            "type": "map.v1", # FIX: Cambiado a map.v1 para la validación
             "source": self.agent_id,
             "target": "BuilderBot",
             "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "payload": {
-                # Se utiliza una estructura mínima para pasar la validación
+                # Esta estructura cumple con el esquema map.v1 de core/json_validator.py
                 "exploration_area": f"({self.exploration_position.x},{self.exploration_position.z}) size {self.exploration_size}",
                 "elevation_map": [64.0],
                 "optimal_zone": {"center": self.context["target_zone"], "variance": 1.0},
-                "target_location": self.context["target_zone"]
             },
             "context": {"required_bom": required_materials},
             "status": "SUCCESS"
