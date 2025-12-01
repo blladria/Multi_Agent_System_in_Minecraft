@@ -77,6 +77,22 @@ class BuilderBot(BaseAgent):
             return False
         return all(self.current_inventory.get(material, 0) >= required_qty 
                    for material, required_qty in self.required_bom.items())
+                   
+    # --- NUEVO MÉTODO: Cálculo del BOM (Responsabilidad del BuilderBot) ---
+    def _calculate_bom_for_structure(self) -> Dict[str, int]:
+        """
+        Calcula el Bill of Materials (BoM) total necesario para construir
+        la estructura Simple Shelter.
+        """
+        bom = {}
+        for _, _, _, material_key in SIMPLE_SHELTER_DESIGN:
+            if material_key != 'air':
+                # Utilizamos una expresión funcional simple para contar:
+                bom[material_key] = bom.get(material_key, 0) + 1
+        
+        self.logger.info(f"BOM calculado para Simple Shelter: {bom}")
+        return bom
+    # ---------------------------------------------------------------------
 
     # --- Ciclo Perceive-Decide-Act ---
     
@@ -221,27 +237,26 @@ class BuilderBot(BaseAgent):
             # Usamos el campo 'optimal_zone.center' del payload para la posición central, si existe
             optimal_zone_center = payload.get("optimal_zone", {}).get("center", {})
 
-            # 1. Extraer la zona objetivo de donde sea más probable que esté (Contexto o Payload)
+            # 1. Extraer la zona objetivo
             if context.get("target_zone"):
                  self.target_zone = context["target_zone"]
             elif optimal_zone_center:
                  self.target_zone = optimal_zone_center
 
-            # 2. Extraer el BOM del contexto (asumido patrón de comunicación)
-            self.required_bom = context.get("required_bom", {}) 
+            # 2. CALCULAR el BOM (Nueva Responsabilidad)
+            self.required_bom = self._calculate_bom_for_structure() 
             
-            # --- MODIFICACIÓN CLAVE: Publicar requisitos al MinerBot inmediatamente ---
-            # Esto se hace después de recibir el mapa y de haber extraído el BOM.
+            # 3. Publicar requisitos al MinerBot inmediatamente (BuilderBot -> MinerBot)
             if self.required_bom:
                 await self._publish_requirements_to_miner()
             # -------------------------------------------------------------------------
 
-            self.logger.info(f"Mapa recibido. Zona objetivo: {self.target_zone}. BOM: {self.required_bom}")
+            self.logger.info(f"Mapa recibido. Zona objetivo: {self.target_zone}. BOM calculado: {self.required_bom}")
             
             # Si estaba esperando mapa, reanuda la decisión
             if self.state == AgentState.WAITING: 
                 self.state = AgentState.RUNNING 
-            # Si está IDLE, se le da luz verde para pasar a RUNNING para que decide() lo mueva a WAITING.
+            # Si está IDLE, se le da luz verde para pasar a RUNNING para que decide() lo mueva a WAITING (si faltan materiales).
             elif self.state == AgentState.IDLE: 
                 self.state = AgentState.RUNNING
 

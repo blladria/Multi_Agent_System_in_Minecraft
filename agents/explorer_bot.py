@@ -289,14 +289,16 @@ class ExplorerBot(BaseAgent):
 
 
     async def _publish_map_data(self):
-        """Publica los datos del mapa y la ubicación recomendada al BuilderBot."""
+        """
+        Publica los datos del mapa y la ubicación recomendada al BuilderBot.
+        (MODIFICADO para NO incluir el BOM en el contexto)
+        """
         
         if not self.context.get("target_zone"):
              self.context["target_zone"] = {"x": int(self.exploration_position.x + self.exploration_size // 2),
                                             "z": int(self.exploration_position.z + self.exploration_size // 2)}
              
-        # Simular cálculo de materiales: 50 Stone y 50 Dirt como requerimiento inicial
-        required_materials = self._calculate_materials_needed()
+        # BOM REMOVED: El BuilderBot ahora calculará su propio BOM.
         
         map_message = {
             "type": "map.v1", 
@@ -309,22 +311,15 @@ class ExplorerBot(BaseAgent):
                 "elevation_map": [64.0],
                 "optimal_zone": {"center": self.context["target_zone"], "variance": 1.0},
             },
-            "context": {"required_bom": required_materials},
+            # Contexto solo incluye la zona objetivo.
+            "context": {"target_zone": self.context["target_zone"]}, 
             "status": "SUCCESS"
         }
         await self.broker.publish(map_message)
-        self.logger.info(f"Datos de mapa y zona objetivo publicado a BuilderBot. BOM solicitado: {required_materials}")
+        self.logger.info(f"Datos de mapa y zona objetivo publicado a BuilderBot.")
         
-    def _calculate_materials_needed(self) -> Dict[str, int]:
-        """
-        Define el BoM inicial requerido por el BuilderBot (50 Stone, 50 Dirt).
-        """
-        # BOM para el Simple Shelter (solo piedra y tierra)
-        bom = {
-            "stone": 50,  
-            "dirt": 50,   
-        }
-        return bom
+    # MÉTODO _calculate_materials_needed ELIMINADO
+
     
     # --- FUNCIONALIDAD: Reportar estado a chat (Para /explorer status) ---
     async def _publish_status(self):
