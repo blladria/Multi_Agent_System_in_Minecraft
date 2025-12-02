@@ -6,46 +6,37 @@ from .base_strategy import BaseMiningStrategy
 
 class VerticalSearchStrategy(BaseMiningStrategy):
     """
-    Estrategia de Búsqueda Vertical (Para minería profunda de piedra/minerales).
-    Implementa el movimiento a Y=surface cuando se alcanza el límite de Bedrock (Y=5).
+    Estrategia de Búsqueda Vertical (Quarry).
+    Excava una columna hacia abajo hasta la roca madre, luego se mueve y repite.
+    Ideal para Cobblestone y Stone.
     """
-    MIN_SAFE_Y = 5 
-    RESTART_Y = 65 
+    MIN_SAFE_Y = 5   # No bajar más allá de esto (Bedrock)
+    RESTART_Y = 65   # Altura segura de reinicio si falla la lectura
 
     async def execute(self, requirements: Dict[str, int], inventory: Dict[str, int], position: Vec3, mine_block_callback: Callable):
         
-        self.logger.debug("Estrategia activa: Búsqueda Vertical (Profunda).")
+        self.logger.debug(f"VerticalSearch en ({position.x}, {position.y}, {position.z})")
 
-        volume = 3
+        # 1. Intentar minar el bloque actual y el de abajo (velocidad x2)
+        # Minamos en la posición actual
+        await mine_block_callback(position)
         
-        # 1. Minar 3 bloques: el actual y dos debajo (Y, Y-1, Y-2)
-        for i in range(volume):
-            mine_pos = position.clone()
-            # Patrón de minería: El agente está en Y=getHeight+1, así que minamos en [Y-1] (la superficie) y [Y-2] y [Y-3]
-            mine_pos.y -= (i + 1)
-            
-            await mine_block_callback(mine_pos)
-            await asyncio.sleep(0.3) 
-        
-        # 2. Lógica de Movimiento: Vertical o Horizontal (si se toca fondo)
-        if position.y > (self.MIN_SAFE_Y + 1): # +1 para compensar que el agente está de pie en Y+1
-            position.y -= 1 
-            self.logger.debug(f"Agente se mueve a Y={position.y} para el siguiente ciclo.")
+        # 2. Descender
+        if position.y > self.MIN_SAFE_Y:
+            position.y -= 1
         else:
-            # Desplazamiento Horizontal al tocar fondo
-            self.logger.warning(f"Se alcanzó la profundidad máxima ({self.MIN_SAFE_Y}). Desplazando 1 bloque en X para nuevo pozo.")
-            
+            # 3. Si tocamos fondo, nos movemos a la siguiente columna
+            self.logger.info("Fondo alcanzado. Iniciando nueva columna.")
             position.x += 1
             
-            # CORRECCIÓN DE ALTURA: Obtener la altura real de la superficie para el nuevo pozo
+            # Reiniciar altura a la superficie
             try:
-                # mc.getHeight devuelve el bloque sólido más alto.
-                new_y = self.mc.getHeight(int(position.x), int(position.z))
-                # Posiciona el minero en ese bloque sólido para que el marcador (Y+1) esté a ras.
-                position.y = max(new_y + 1, self.RESTART_Y)
-            except Exception:
-                 position.y = self.RESTART_Y
-            
-            self.logger.info(f"Iniciando nuevo pozo. Nueva posicion de inicio: ({position.x}, {position.y}, {position.z})")
-             
-        await asyncio.sleep(0.1)
+                # Obtenemos la altura del nuevo punto X
+                surface_y = self.mc.getHeight(int(position.x), int(position.z))
+                # Nos ponemos un poco bajo tierra para no minar aire (y-1)
+                position.y = surface_y - 1 
+            except:
+                position.y = self.RESTART_Y
+                
+        # Pequeña pausa para no saturar
+        await asyncio.sleep(0.2)
