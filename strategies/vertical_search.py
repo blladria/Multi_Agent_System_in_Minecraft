@@ -13,8 +13,8 @@ class VerticalSearchStrategy(BaseMiningStrategy):
     MIN_SAFE_Y = 5   # No bajar más allá de esto (Bedrock)
     RESTART_Y = 65   # Altura de reinicio de fallback
     
-    # Paso horizontal: 11 bloques (salta 10) para el patrón de rejilla de pozos
-    HORIZONTAL_STEP = 11
+    # FIX CRÍTICO: Cambiamos el paso horizontal a 1 para ir al bloque ADYACENTE.
+    HORIZONTAL_STEP = 1
 
     def __init__(self, mc_connection, logger: logging.Logger):
         super().__init__(mc_connection, logger)
@@ -49,8 +49,7 @@ class VerticalSearchStrategy(BaseMiningStrategy):
             # Continuar descendiendo en el pozo actual (solo movemos Y)
             position.y -= 1 
             
-            # --- ELIMINACIÓN DEL HACK DE FLOAT ---
-            # Mantenemos X y Z como enteros estables.
+            # Aseguramos X y Z como enteros estables (sin el hack de float)
             position.x = int(position.x)
             position.z = int(position.z)
 
@@ -63,20 +62,20 @@ class VerticalSearchStrategy(BaseMiningStrategy):
                 self.cycle_counter = 0 
                 self.logger.warning(f"Fondo alcanzado. Iniciando nuevo pozo en X + {self.HORIZONTAL_STEP}.")
                 
-                # 1. Aumentamos X (Usamos int() para evitar la corrupción por floats anteriores)
+                # 1. Aumentamos X en 1 para ir al bloque adyacente (X+1)
                 position.x = int(position.x) + self.HORIZONTAL_STEP
-                position.z = int(position.z) # Aseguramos Z como entero
+                position.z = int(position.z)
                 
-                # 2. Recalculamos Y (FIX de altura)
+                # 2. Recalculamos Y (FIX de altura, para empezar en la superficie del nuevo X)
                 try:
                     new_surface_y = self.mc.getHeight(position.x, position.z) + 1
                     position.y = new_surface_y
                 except Exception:
                     position.y = self.RESTART_Y
-                
+            
             else:
                  # Si ya cumplimos los requisitos, terminamos. No movemos X.
                  self.logger.info("Requisitos cumplidos. Finalizando estrategia VerticalSearch.")
                  position.y = self.RESTART_Y
                  
-        await asyncio.sleep(0.1) 
+        await asyncio.sleep(0.1)
