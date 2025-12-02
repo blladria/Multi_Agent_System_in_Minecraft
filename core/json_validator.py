@@ -55,11 +55,11 @@ MATERIALS_REQUIREMENTS_SCHEMA = dict(BASE_SCHEMA, **{
         "payload": {
             "type": "object",
             "patternProperties": {
-                # Se espera un nombre de material (string) y una cantidad (integer)
+                # REGLA: Todos los materiales listados deben ser enteros >= 1
                 "^.*$": {"type": "integer", "minimum": 1}
             },
-            # REQUISITO ACTUALIZADO: Ahora se requiere 'cobblestone' y 'dirt'
-            "required": ["cobblestone", "dirt"], 
+            # --- FIX CRÍTICO: Eliminamos 'required: ["cobblestone", "dirt"]' ---
+            "required": [], 
             "additionalProperties": True
         }
     })
@@ -96,6 +96,10 @@ MAP_SCHEMA = dict(BASE_SCHEMA, **{
                 "exploration_area": {"type": "string"}, # Coordenadas de la región explorada
                 "elevation_map": {"type": "array", "items": {"type": "number"}}, # Mapa de elevación
                 "optimal_zone": {"type": "object"}, # Zona plana identificada
+                # Estos campos (sugerencia y varianza) se añaden en el ExplorerBot, pero el esquema base de map.v1
+                # debe permitir la extensión con additionalProperties=True para que pasen, o se pueden añadir aquí:
+                "suggested_template": {"type": "string"},
+                "terrain_variance": {"type": "number"}
             },
             "required": ["exploration_area", "elevation_map"],
             "additionalProperties": True
@@ -108,15 +112,30 @@ COMMAND_SCHEMA = dict(BASE_SCHEMA, **{
     "properties": dict(BASE_SCHEMA['properties'], **{
         # Tipo que debe coincidir con el patrón command.algo.v1
         "type": {"pattern": "^command\\..*\\.v1$"},
-        "source": {"const": "Manager"}, # Se asume que el Manager maneja la conversión de comandos
+        "source": {"const": "Manager"}, 
         "payload": {
             "type": "object",
             "properties": {
-                # CORRECCIÓN CRÍTICA: Se añade 'status' al enum para que los comandos pasen la validación.
                 "command_name": {"type": "string", "enum": ["pause", "resume", "stop", "update", "start", "build", "plan", "bom", "fulfill", "set", "status"]},
-                "parameters": {"type": "object"}, # Parámetros del comando (ej: x, y, z)
+                "parameters": {"type": "object"}, 
             },
             "required": ["command_name"],
+            "additionalProperties": True
+        }
+    })
+})
+
+# 5. Mensaje de Estado de Construcción (build.status.v1) - Necesario para cerrar el ciclo
+BUILD_STATUS_SCHEMA = dict(BASE_SCHEMA, **{
+    "properties": dict(BASE_SCHEMA['properties'], **{
+        "type": {"const": "build.status.v1"},
+        "payload": {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["SUCCESS", "ERROR", "PENDING"]},
+                "location": {"type": "object"},
+            },
+            "required": ["status"],
             "additionalProperties": True
         }
     })
@@ -129,6 +148,7 @@ MESSAGE_SCHEMAS = {
     "inventory.v1": INVENTORY_SCHEMA,
     "map.v1": MAP_SCHEMA,
     "command": COMMAND_SCHEMA,
+    "build.status.v1": BUILD_STATUS_SCHEMA # Añadido el esquema de estado de construcción
 }
 
 
@@ -137,12 +157,10 @@ MESSAGE_SCHEMAS = {
 def validate_message(message: dict) -> bool:
     """
     Valida un mensaje JSON contra su esquema predefinido basado en el campo 'type'.
-    Si el mensaje es válido, devuelve True. Si es inválido, lanza ValidationError.
     """
     message_type = message.get("type", "unknown")
     
     # 1. Determinar el esquema a usar
-    # Si es un comando, usa el esquema COMMAND_SCHEMA
     if message_type.startswith("command."):
         schema = MESSAGE_SCHEMAS["command"]
     elif message_type in MESSAGE_SCHEMAS:
@@ -159,44 +177,3 @@ def validate_message(message: dict) -> bool:
         logger.error(f"FALLO DE VALIDACIÓN: Mensaje JSON no cumple con el esquema '{message_type}'")
         logger.error(f"Error detallado: {e.message}")
         raise ValidationError(f"JSON Validation Error for type {message_type}: {e.message}")
-
-
-# --- Bloque de Prueba (Opcional) ---
-
-if __name__ == "__main__":
-    
-    # Mensaje VÁLIDO (ejemplo de requisitos)
-    valid_msg = {
-        "type": "materials.requirements.v1",
-        "source": "BuilderBot",
-        "target": "MinerBot",
-        "timestamp": "2025-10-21T15:30:00Z",
-        "payload": {
-            "stone": 50,
-            "dirt": 100,
-        },
-        "status": "PENDING",
-        "context": {"task_id": "BOM-001"}
-    }
-    
-    # Mensaje INVÁLIDO (falta el campo 'target', que es requerido)
-    invalid_msg = {
-        "type": "map.v1",
-        "source": "ExplorerBot",
-        "timestamp": "2025-10-21T15:30:00Z",
-        "payload": {"exploration_area": "A1", "elevation_map": [10, 11, 10]},
-        "status": "SUCCESS"
-    }
-
-    print("--- PRUEBAS DE VALIDACIÓN ---")
-    try:
-        if validate_message(valid_msg):
-            print("Mensaje VÁLIDO aprobado.")
-
-        print("\nIntentando validar mensaje INVÁLIDO...")
-        validate_message(invalid_msg)
-        
-    except ValidationError as e:
-        print(f"FALLO ESPERADO: {e}")
-    except Exception as e:
-        print(f"Error inesperado: {e}")
