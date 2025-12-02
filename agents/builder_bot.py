@@ -8,6 +8,7 @@ from mcpi.vec3 import Vec3
 from datetime import datetime, timezone
 
 # --- 1. MAPEO DE MATERIALES (Solo Primitivos) ---
+# Limitado a lo que el MinerBot puede extraer directamente.
 MATERIAL_MAP = {
     "cobblestone": block.COBBLESTONE.id, # Se obtiene minando piedra
     "dirt": block.DIRT.id,               # Se obtiene minando tierra
@@ -17,7 +18,7 @@ MATERIAL_MAP = {
 # --- 2. DEFINICIÓN DE PLANTILLAS (TEMPLATES) ---
 
 # Diseño 1: Refugio Simple (3x3 - Muros de Cobblestone)
-# Muros y suelo son Cobblestone (BOM: 24 Cobble, 0 Dirt)
+# Muros y suelo son Cobblestone (BOM: 24 Cobble, 0 Dirt). Puerta de 2 bloques.
 TEMPLATE_SHELTER = [
     # Suelo (y=0)
     (0,0,0,'cobblestone'), (1,0,0,'cobblestone'), (2,0,0,'cobblestone'),
@@ -186,9 +187,9 @@ class BuilderBot(BaseAgent):
                 self.state = AgentState.IDLE
                 await self._publish_build_complete()
                 
-                # Restaurar marcador a nivel del suelo
-                try: self._update_marker(Vec3(center_x, y_surface + 1, center_z))
-                except: pass
+                # --- FIX: Desaparecer el marcador del BuilderBot ---
+                self._clear_marker() 
+                # ----------------------------------------------------
             else:
                  self.logger.warning("Construcción interrumpida.")
 

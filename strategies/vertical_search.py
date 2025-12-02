@@ -51,13 +51,9 @@ class VerticalSearchStrategy(BaseMiningStrategy):
             
             position.x += 1
             
-            # Reiniciar altura a la superficie (Usando la altura real del nuevo punto X)
-            try:
-                surface_y = self.mc.getHeight(int(position.x), int(position.z))
-                # Nos ponemos en la superficie + 1 para empezar a picar abajo
-                position.y = surface_y + 1 
-            except Exception:
-                 position.y = self.RESTART_Y
+            # NOTA: Ya no necesitamos recalcular la altura aquí, solo el MinerBot lo hace
+            # cuando recibe un nuevo trabajo. Aquí solo actualizamos X.
+            position.y = self.RESTART_Y # Usamos la altura de reinicio estándar para el bot minero.
             
             self.logger.info(f"Nuevo pozo iniciado en: ({position.x}, {position.y}, {position.z})")
              

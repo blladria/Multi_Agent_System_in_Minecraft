@@ -45,6 +45,9 @@ class MinerBot(BaseAgent):
         # Offset para no minar siempre en el mismo hueco
         self._mining_offset: int = 0
         
+        # NEW: Almacena la altura Y fija del marcador visual en superficie
+        self.surface_marker_y = 66 
+        
         # Estrategias Disponibles
         self.strategy_classes: Dict[str, Type[BaseMiningStrategy]] = { 
             "vertical": VerticalSearchStrategy,
@@ -141,11 +144,11 @@ class MinerBot(BaseAgent):
     async def act(self):
         if self.state == AgentState.RUNNING and self.mining_sector_locked:
             
-            # 1. FIX VISUALIZACIÓN: Marcador siempre en superficie
+            # 1. FIX VISUALIZACIÓN: Marcador siempre en la posición de superficie *fija*
             try:
                  x, z = int(self.mining_position.x), int(self.mining_position.z)
-                 # Obtenemos la altura REAL de la superficie para pintar la lana
-                 y_surf = self.mc.getHeight(x, z) + 1
+                 # Usamos la altura fija self.surface_marker_y
+                 y_surf = self.surface_marker_y 
                  # Pintamos el marcador en la superficie
                  self._update_marker(Vec3(x, y_surf, z))
             except: pass
@@ -206,10 +209,17 @@ class MinerBot(BaseAgent):
                  
                  self.mining_position.x = bx + offset
                  self.mining_position.z = bz + offset
+                 
+                 # --- NEW FIX: Set the initial mining and marker height once ---
                  try:
-                     # Posiciona en la superficie para empezar a picar desde allí
+                     # Posiciona en la superficie + 1 para empezar a picar abajo
                      self.mining_position.y = self.mc.getHeight(self.mining_position.x, self.mining_position.z) + 1
-                 except: self.mining_position.y = 65
+                     # CACHE la altura del marcador en superficie
+                     self.surface_marker_y = self.mining_position.y
+                 except Exception:
+                     self.mining_position.y = 65
+                     self.surface_marker_y = 66
+                 # ----------------------------------------------------------------
                  
                  # Reiniciar la instancia de estrategia
                  self.current_strategy_instance = self.strategy_classes[self.current_strategy_name](self.mc, self.logger)
@@ -235,8 +245,12 @@ class MinerBot(BaseAgent):
             
         self.mining_position.x = nx
         self.mining_position.z = nz
-        try: self.mining_position.y = self.mc.getHeight(nx, nz) + 1
-        except: pass
+        try: 
+             self.mining_position.y = self.mc.getHeight(nx, nz) + 1
+             self.surface_marker_y = self.mining_position.y
+        except: 
+             self.mining_position.y = 65
+             self.surface_marker_y = 66
 
     def _parse_set_strategy(self, params: Dict[str, Any]):
         args = params.get('args', [])
