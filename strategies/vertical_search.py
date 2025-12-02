@@ -12,15 +12,17 @@ class VerticalSearchStrategy(BaseMiningStrategy):
     MIN_SAFE_Y = 5   # No bajar más allá de esto (Bedrock)
     RESTART_Y = 65   # Altura de reinicio en superficie
 
+    def __init__(self, mc_connection, logger: logging.Logger):
+        super().__init__(mc_connection, logger)
+        self.cycle_counter = 0 # <--- NUEVO: Contador para movimiento visible
+
     async def execute(self, requirements: Dict[str, int], inventory: Dict[str, int], position: Vec3, mine_block_callback: Callable):
         
         self.logger.debug(f"VerticalSearch en ({position.x}, {position.y}, {position.z})")
 
         # 1. Minar 3 bloques: el actual y dos debajo (Y, Y-1, Y-2)
-        # Esto mina los bloques directamente bajo el "suelo" del agente (que está en position.y)
         for i in range(3):
             mine_pos = position.clone()
-            # El agente está en Y=superficie+1. Minamos en Y (el bloque donde está el agente) y luego Y-1, Y-2.
             mine_pos.y -= i
             
             await mine_block_callback(mine_pos)
@@ -30,9 +32,19 @@ class VerticalSearchStrategy(BaseMiningStrategy):
         if position.y > (self.MIN_SAFE_Y + 1): 
             # Si aún no toca fondo, nos movemos un bloque HACIA ABAJO para el siguiente ciclo.
             position.y -= 1 
+            self.cycle_counter += 1 # Incrementamos el contador
             self.logger.info(f"Agente desciende. Nueva Y interna: {position.y}")
+            
+            # --- FIX ANIMACIÓN: MOVIMIENTO HORIZONTAL VISIBLE ---
+            if self.cycle_counter >= 5: # Movemos horizontalmente cada 5 pasos de profundidad
+                self.cycle_counter = 0
+                position.z += 1 # Pequeño movimiento horizontal para activar el marcador
+                self.logger.warning("Movimiento horizontal forzado para mostrar la animación.")
+            # ----------------------------------------------------
+
         else:
             # Desplazamiento Horizontal (Nueva columna)
+            self.cycle_counter = 0 # Reiniciamos el contador
             self.logger.warning("Fondo alcanzado. Iniciando nueva columna.")
             
             position.x += 1
