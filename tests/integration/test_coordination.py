@@ -51,12 +51,12 @@ def setup_coordination_system(mock_mc):
 @pytest.mark.asyncio
 async def test_workflow_simple_shelter(setup_coordination_system):
     """Prueba la construcción del Refugio Simple (Suelo normal).
-    BOM CORREGIDO: 17 Cobblestone, 7 Dirt (Debido a la puerta de 2 bloques).
+    BOM ACTUALIZADO: 24 Cobblestone (casa "más currada" de solo piedra).
     """
     broker, explorer, builder, miner = setup_coordination_system
     
-    # Cantidades esperadas para la nueva estructura
-    expected_bom = {"cobblestone": 17, "dirt": 7}
+    # BOM CORREGIDO: 24 Cobblestone (Calculado por BuilderBot con la plantilla robusta)
+    expected_bom = {"cobblestone": 24}
     target_zone = {"x": 20, "z": 20} 
     
     map_message = {
@@ -103,7 +103,7 @@ async def test_workflow_watch_tower(setup_coordination_system):
     """
     broker, explorer, builder, miner = setup_coordination_system
     
-    # Cantidades esperadas para la nueva estructura
+    # BOM CORREGIDO: 35 Cobblestone
     expected_bom = {"cobblestone": 35}
     target_zone = {"x": 100, "z": 100} 
     
