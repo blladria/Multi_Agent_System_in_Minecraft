@@ -195,7 +195,7 @@ class MinerBot(BaseAgent):
             self.requirements = payload.copy()
             self.logger.info(f"Nuevos requisitos recibidos: {self.requirements}")
             
-            # FIX APLICADO: Resetear el inventario para forzar la minería.
+            # FIX CRÍTICO: Resetear el inventario para forzar la minería.
             self.inventory = {mat: 0 for mat in MATERIAL_MAP.keys()}
             
             # Reposicionar minero según zona de construcción + offset
@@ -247,7 +247,7 @@ class MinerBot(BaseAgent):
                 self.current_strategy_name = strat
                 self.logger.info(f"Estrategia manual: {strat}")
 
-    async def _select_adaptive_strategy(self, ):
+    async def _select_adaptive_strategy(self):
         """Elige la mejor estrategia según lo que falte."""
         if not self.requirements: return 
 

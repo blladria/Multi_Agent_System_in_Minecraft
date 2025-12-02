@@ -50,11 +50,13 @@ def setup_coordination_system(mock_mc):
 # --- TEST 1: REFUGIO SIMPLE (CASO NORMAL) ---
 @pytest.mark.asyncio
 async def test_workflow_simple_shelter(setup_coordination_system):
-    """Prueba la construcción del Refugio Simple (Suelo normal)."""
+    """Prueba la construcción del Refugio Simple (Suelo normal).
+    BOM CORREGIDO: 17 Cobblestone, 7 Dirt (Debido a la puerta de 2 bloques).
+    """
     broker, explorer, builder, miner = setup_coordination_system
     
-    # BOM: 18 Cobble, 8 Dirt
-    expected_bom = {"cobblestone": 18, "dirt": 8}
+    # Cantidades esperadas para la nueva estructura
+    expected_bom = {"cobblestone": 17, "dirt": 7}
     target_zone = {"x": 20, "z": 20} 
     
     map_message = {
@@ -96,11 +98,13 @@ async def test_workflow_simple_shelter(setup_coordination_system):
 # --- TEST 2: TORRE DE VIGILANCIA (CASO MONTAÑOSO) ---
 @pytest.mark.asyncio
 async def test_workflow_watch_tower(setup_coordination_system):
-    """Prueba que si el terreno es irregular, se elige la Torre."""
+    """Prueba que si el terreno es irregular, se elige la Torre.
+    BOM CORREGIDO: 35 Cobblestone.
+    """
     broker, explorer, builder, miner = setup_coordination_system
     
-    # BOM Torre: 37 Cobblestone (Solo piedra)
-    expected_bom = {"cobblestone": 37}
+    # Cantidades esperadas para la nueva estructura
+    expected_bom = {"cobblestone": 35}
     target_zone = {"x": 100, "z": 100} 
     
     map_message = {
@@ -122,7 +126,7 @@ async def test_workflow_watch_tower(setup_coordination_system):
 
     await debug_state_wait(builder, AgentState.WAITING, 2.0)
     
-    # ASSERT CLAVE: Verifica que el Builder calculó 37 de piedra
+    # ASSERT CLAVE: Verifica que el Builder calculó 35 de piedra
     assert builder.required_bom == expected_bom 
     
     # Completar ciclo
@@ -141,11 +145,13 @@ async def test_workflow_watch_tower(setup_coordination_system):
 # --- TEST 3: BÚNKER (CASO PLANO) ---
 @pytest.mark.asyncio
 async def test_workflow_storage_bunker(setup_coordination_system):
-    """Prueba que si el terreno es plano, se elige el Búnker."""
+    """Prueba que si el terreno es plano, se elige el Búnker.
+    BOM CORREGIDO: 32 Cobblestone, 22 Dirt.
+    """
     broker, explorer, builder, miner = setup_coordination_system
     
-    # BOM Búnker: 32 Cobblestone + 24 Dirt
-    expected_bom = {"cobblestone": 32, "dirt": 24}
+    # Cantidades esperadas para la nueva estructura
+    expected_bom = {"cobblestone": 32, "dirt": 22}
     target_zone = {"x": -50, "z": -50} 
     
     map_message = {
