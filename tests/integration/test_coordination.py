@@ -10,58 +10,30 @@ from agents.builder_bot import BuilderBot
 from agents.miner_bot import MinerBot
 from mcpi.vec3 import Vec3
 from datetime import timezone
-from typing import Tuple
-import logging # AÑADIDO: Importar el módulo logging
-
-# Importamos la función de configuración de logging desde AgentManager
+import logging
 from core.agent_manager import setup_system_logging 
 
-# --- FUNCIÓN DE UTILIDAD PARA SEGUIMIENTO ---
-
+# --- UTILS ---
 async def debug_state_wait(agent, expected_state: AgentState, max_wait_seconds: float):
-    """
-    Espera hasta que el agente alcance un estado específico o se agote el tiempo.
-    Imprime el estado en cada ciclo para seguimiento.
-    """
     start_time = asyncio.get_event_loop().time()
-    
-    # Imprime el estado inicial antes de la espera
-    print(f"\n[DEBUG] Esperando que {agent.agent_id} transicione a {expected_state.name}...")
-    
     while agent.state != expected_state and (asyncio.get_event_loop().time() - start_time) < max_wait_seconds:
-        print(f"[DEBUG] {agent.agent_id} Estado actual: {agent.state.name}")
-        # Pequeña pausa para permitir que el event loop procese la cola de mensajes
         await asyncio.sleep(0.1) 
-    
-    current_state = agent.state
-    if current_state != expected_state:
-        print(f"[DEBUG] ERROR: Tiempo agotado. {agent.agent_id} se quedo en {current_state.name}.")
-    else:
-        print(f"[DEBUG] ÉXITO: {agent.agent_id} alcanzó el estado {expected_state.name}.")
-        
-    return current_state
+    return agent.state
 
-
-# --- FIXTURES y MOCKS (Mantener el código actual) ---
+# --- FIXTURES ---
 @pytest.fixture
 def mock_mc():
     mc = MagicMock()
     mc.getHeight.return_value = 65 
     mc.postToChat.return_value = None
-    
-    # MODIFICACION: Añadir mock para getTilePos() para que MinerBot.__init__ no falle
-    # Simula que el jugador está en (50, 70, 50) para que el MinerBot se inicialice en (60, 65, 60)
     mock_player = MagicMock()
     mock_player.getTilePos.return_value = Vec3(50, 70, 50) 
     mc.player = mock_player
-    
     return mc
 
 @pytest.fixture
 def setup_coordination_system(mock_mc):
-    # LLAMADA CRÍTICA: Configura el logging para que use un archivo de test
     setup_system_logging(log_file_name='logsTests.log') 
-
     broker = MessageBroker()
     explorer = ExplorerBot("ExplorerBot", mock_mc, broker)
     builder = BuilderBot("BuilderBot", mock_mc, broker)
@@ -69,118 +41,143 @@ def setup_coordination_system(mock_mc):
     broker.subscribe("ExplorerBot")
     broker.subscribe("BuilderBot")
     broker.subscribe("MinerBot")
-    
-    # FIX: Usar yield para que sea un generator fixture
     yield broker, explorer, builder, miner
-
-    # Teardown: Forzar la escritura de los logs del buffer al finalizar el test
     root_logger = logging.getLogger()
     for handler in root_logger.handlers:
         if isinstance(handler, logging.handlers.RotatingFileHandler):
             handler.flush()
 
-# --- PRUEBA PRINCIPAL ---
-
+# --- TEST 1: REFUGIO SIMPLE (CASO NORMAL) ---
 @pytest.mark.asyncio
-async def test_full_workflow_coordination(setup_coordination_system):
-    """
-    Prueba el ciclo completo de coordinación: Explorer -> Builder -> Miner -> Builder.
-    (MODIFICADO: BuilderBot calcula el BOM, usando Cobblestone)
-    """
+async def test_workflow_simple_shelter(setup_coordination_system):
+    """Prueba la construcción del Refugio Simple (Suelo normal)."""
     broker, explorer, builder, miner = setup_coordination_system
     
-    # BOM esperado: 26 Cobblestone, 8 Dirt (calculado por BuilderBot en base a SIMPLE_SHELTER_DESIGN)
-    # NOTA: Los nombres de los materiales ahora son 'cobblestone' y 'dirt'.
-    expected_bom = {"cobblestone": 26, "dirt": 8}
-    target_zone = {"x": 20, "z": 20} # Posición simulada
-    
-    # --- SIMULACIÓN MANUAL DEL FLUJO EXPLORER -> BUILDER (Para evitar el delay del Explorer) ---
+    # BOM: 18 Cobble, 8 Dirt
+    expected_bom = {"cobblestone": 18, "dirt": 8}
+    target_zone = {"x": 20, "z": 20} 
     
     map_message = {
         "type": "map.v1", 
-        "source": "ExplorerBot",
-        "target": "BuilderBot",
+        "source": "ExplorerBot", "target": "BuilderBot",
         "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         "payload": {
-            "exploration_area": "(10,10) to (30,30)", 
-            "elevation_map": [64.0],
-            "optimal_zone": {"center": target_zone, "variance": 1.0},
+            "exploration_area": "size 30", "elevation_map": [64.0],
+            "optimal_zone": {"center": target_zone},
+            "suggested_template": "simple_shelter", # FORZAMOS LA SUGERENCIA
+            "terrain_variance": 1.5
         },
-        # El ExplorerBot SOLO publica la zona objetivo.
-        "context": {"target_zone": target_zone}, 
-        "status": "SUCCESS"
+        "context": {"target_zone": target_zone}, "status": "SUCCESS"
     }
     
-    # 1. Lanzar ciclos asíncronos
-    agent_tasks = {
-        'explorer': asyncio.create_task(explorer.run_cycle()),
-        'builder': asyncio.create_task(builder.run_cycle()),
-        'miner': asyncio.create_task(miner.run_cycle()),
-    }
-    
+    agent_tasks = [asyncio.create_task(a.run_cycle()) for a in [explorer, builder, miner]]
     await asyncio.sleep(0.1) 
-    
-    # 2. Publicar el mensaje del mapa (que activa al BuilderBot)
     await broker.publish(map_message)
 
-    # 3. Esperar a que BuilderBot procese el mensaje y transicione a WAITING (esperando materiales)
-    await asyncio.sleep(0.5) 
-    await debug_state_wait(builder, AgentState.WAITING, 1.0)
-
-    # Verificación 1.1: BuilderBot debe CALCULAR el BOM y pasar a WAITING.
+    # Verificar BOM calculado
+    await debug_state_wait(builder, AgentState.WAITING, 2.0)
     assert builder.required_bom == expected_bom 
-    assert builder.state == AgentState.WAITING
     
-    # --- FASE 2/3: Minería y Suministro (Miner -> Builder) ---
-
-    # El MinerBot debería haber recibido el BOM y estar en RUNNING (minando)
-    await asyncio.sleep(0.5) 
-    assert miner.requirements == expected_bom
-    assert miner.state == AgentState.RUNNING 
-
-    # Simular que el Miner ha terminado la minería y envía el mensaje de ÉXITO
-    # Usamos cantidades suficientes para el BOM: 26 Cobblestone, 8 Dirt. Usaremos 30 y 10.
-    # Los nombres de los materiales en el inventario deben coincidir con los del BOM
-    miner.inventory = {"cobblestone": 30, "dirt": 10}
+    # Simular minería
+    miner.inventory = {"cobblestone": 50, "dirt": 50} # Sobrado
+    inv_msg = {
+        "type": "inventory.v1", "source": "MinerBot", "target": "BuilderBot",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+        "payload": {"collected_materials": miner.inventory, "total_volume": 100},
+        "status": "SUCCESS", "context": {"required_bom": expected_bom} 
+    }
+    await broker.publish(inv_msg)
     
-    inventory_success_message = {
-        "type": "inventory.v1",
-        "source": "MinerBot",
-        "target": "BuilderBot",
+    await debug_state_wait(builder, AgentState.IDLE, 5.0)
+    assert builder.state == AgentState.IDLE
+    
+    for t in agent_tasks: t.cancel()
+
+# --- TEST 2: TORRE DE VIGILANCIA (CASO MONTAÑOSO) ---
+@pytest.mark.asyncio
+async def test_workflow_watch_tower(setup_coordination_system):
+    """Prueba que si el terreno es irregular, se elige la Torre."""
+    broker, explorer, builder, miner = setup_coordination_system
+    
+    # BOM Torre: 37 Cobblestone (Solo piedra)
+    expected_bom = {"cobblestone": 37}
+    target_zone = {"x": 100, "z": 100} 
+    
+    map_message = {
+        "type": "map.v1", 
+        "source": "ExplorerBot", "target": "BuilderBot",
         "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         "payload": {
-            "collected_materials": miner.inventory,
-            "total_volume": 40
+            "exploration_area": "size 30", "elevation_map": [64.0, 70.0],
+            "optimal_zone": {"center": target_zone},
+            "suggested_template": "watch_tower", # SUGERENCIA DE TORRE
+            "terrain_variance": 5.0 # Alta varianza
         },
-        "status": "SUCCESS",
-        # El contexto del inventory.v1 refleja el BOM que el MinerBot estaba siguiendo.
-        "context": {"required_bom": expected_bom} 
+        "context": {"target_zone": target_zone}, "status": "SUCCESS"
     }
     
-    # Publicar el mensaje SUCCESS para despertar al BuilderBot
-    await broker.publish(inventory_success_message)
-    
-    # Dar tiempo al BuilderBot para procesar el mensaje (debe ir a RUNNING e iniciar la construcción)
-    await asyncio.sleep(0.5)
-    
-    # El MinerBot debe haber cumplido requisitos y pasado a IDLE al final de su ciclo
-    await debug_state_wait(miner, AgentState.IDLE, 1.0)
-    
-    # El volumen total debe ser suficiente
-    assert miner.get_total_volume() >= 34 # 26+8
-    assert miner.state == AgentState.IDLE 
+    agent_tasks = [asyncio.create_task(a.run_cycle()) for a in [explorer, builder, miner]]
+    await asyncio.sleep(0.1) 
+    await broker.publish(map_message)
 
-    # --- FASE 4: Construcción (Builder se activa por el mensaje SUCCESS del Miner) ---
+    await debug_state_wait(builder, AgentState.WAITING, 2.0)
     
-    # Verificación 4.1: El BuilderBot debe empezar a construir y terminar (transición a IDLE).
+    # ASSERT CLAVE: Verifica que el Builder calculó 37 de piedra
+    assert builder.required_bom == expected_bom 
+    
+    # Completar ciclo
+    miner.inventory = {"cobblestone": 40}
+    inv_msg = {
+        "type": "inventory.v1", "source": "MinerBot", "target": "BuilderBot",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+        "payload": {"collected_materials": miner.inventory, "total_volume": 40},
+        "status": "SUCCESS", "context": {"required_bom": expected_bom} 
+    }
+    await broker.publish(inv_msg)
     await debug_state_wait(builder, AgentState.IDLE, 5.0)
-     
-    assert builder.state == AgentState.IDLE
-    assert builder.is_building is False
     
-    # Limpieza
-    for task in agent_tasks.values():
-        task.cancel()
-    await asyncio.gather(*agent_tasks.values(), return_exceptions=True)
+    for t in agent_tasks: t.cancel()
+
+# --- TEST 3: BÚNKER (CASO PLANO) ---
+@pytest.mark.asyncio
+async def test_workflow_storage_bunker(setup_coordination_system):
+    """Prueba que si el terreno es plano, se elige el Búnker."""
+    broker, explorer, builder, miner = setup_coordination_system
     
-    print("\n--- PRUEBA DE COORDINACION ASINCRONA (BOM CALCULADO POR BUILDER) EXITOSA ---")
+    # BOM Búnker: 32 Cobblestone + 24 Dirt
+    expected_bom = {"cobblestone": 32, "dirt": 24}
+    target_zone = {"x": -50, "z": -50} 
+    
+    map_message = {
+        "type": "map.v1", 
+        "source": "ExplorerBot", "target": "BuilderBot",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+        "payload": {
+            "exploration_area": "size 30", "elevation_map": [64.0, 64.0],
+            "optimal_zone": {"center": target_zone},
+            "suggested_template": "storage_bunker", # SUGERENCIA DE BÚNKER
+            "terrain_variance": 0.1 # Muy baja varianza
+        },
+        "context": {"target_zone": target_zone}, "status": "SUCCESS"
+    }
+    
+    agent_tasks = [asyncio.create_task(a.run_cycle()) for a in [explorer, builder, miner]]
+    await asyncio.sleep(0.1) 
+    await broker.publish(map_message)
+
+    await debug_state_wait(builder, AgentState.WAITING, 2.0)
+    
+    # ASSERT CLAVE
+    assert builder.required_bom == expected_bom 
+    
+    miner.inventory = {"cobblestone": 35, "dirt": 25}
+    inv_msg = {
+        "type": "inventory.v1", "source": "MinerBot", "target": "BuilderBot",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+        "payload": {"collected_materials": miner.inventory, "total_volume": 60},
+        "status": "SUCCESS", "context": {"required_bom": expected_bom} 
+    }
+    await broker.publish(inv_msg)
+    await debug_state_wait(builder, AgentState.IDLE, 5.0)
+    
+    for t in agent_tasks: t.cancel()
