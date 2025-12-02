@@ -18,76 +18,76 @@ MATERIAL_MAP = {
 # --- 2. DEFINICIÓN DE PLANTILLAS (TEMPLATES) ---
 
 # Diseño 1: Refugio Simple (Mix Cobblestone/Dirt) - 3x3
-# Ideal para terrenos normales.
+# Puerta de 2 bloques de alto en (1, y, 0)
 TEMPLATE_SHELTER = [
-    # Suelo
+    # Suelo (y=0)
     (0,0,0,'cobblestone'), (1,0,0,'cobblestone'), (2,0,0,'cobblestone'),
     (0,0,1,'cobblestone'), (1,0,1,'cobblestone'), (2,0,1,'cobblestone'),
     (0,0,2,'cobblestone'), (1,0,2,'cobblestone'), (2,0,2,'cobblestone'),
-    # Paredes (Tierra reforzada con esquinas de tierra)
-    (0,1,0,'dirt'), (1,1,0,'dirt'), (2,1,0,'dirt'),
-    (0,1,1,'dirt'),                 (2,1,1,'dirt'),
-    (0,1,2,'dirt'), (1,1,2,'dirt'), (2,1,2,'dirt'),
-    (1,1,1,'air'), # Puerta
-    # Techo
-    (0,2,0,'cobblestone'), (1,2,0,'cobblestone'), (2,2,0,'cobblestone'),
+    
+    # Paredes (y=1)
+    (0,1,0,'dirt'),        (1,1,0,'air'),         (2,1,0,'dirt'), # ENTRADA INFERIOR (1,1,0)
+    (0,1,1,'dirt'),        (1,1,1,'air'),         (2,1,1,'dirt'), # Interior space
+    (0,1,2,'dirt'),        (1,1,2,'dirt'),        (2,1,2,'dirt'),
+    
+    # Techo (y=2)
+    (0,2,0,'cobblestone'), (1,2,0,'air'),         (2,2,0,'cobblestone'), # ENTRADA SUPERIOR (1,2,0)
     (0,2,1,'cobblestone'), (1,2,1,'cobblestone'), (2,2,1,'cobblestone'),
     (0,2,2,'cobblestone'), (1,2,2,'cobblestone'), (2,2,2,'cobblestone'),
 ]
 
-# Diseño 2: Torre de Vigilancia (100% Cobblestone)
-# Estructura vertical. Ideal para terrenos irregulares (poca base).
+# Diseño 2: Torre de Vigilancia (100% Cobblestone) - 3x3
+# Puerta de 2 bloques de alto en (1, y, 0)
 TEMPLATE_TOWER = [
-    # Base Sólida 3x3
+    # Base Sólida 3x3 (y=0)
     (0,0,0,'cobblestone'), (1,0,0,'cobblestone'), (2,0,0,'cobblestone'),
     (0,0,1,'cobblestone'), (1,0,1,'cobblestone'), (2,0,1,'cobblestone'),
     (0,0,2,'cobblestone'), (1,0,2,'cobblestone'), (2,0,2,'cobblestone'),
     
-    # Nivel 1 (Paredes)
-    (0,1,0,'cobblestone'), (1,1,0,'cobblestone'), (2,1,0,'cobblestone'),
+    # Nivel 1 (Paredes) - y=1
+    (0,1,0,'cobblestone'), (1,1,0,'air'),         (2,1,0,'cobblestone'), # ENTRADA INFERIOR (1,1,0)
     (0,1,1,'cobblestone'),                         (2,1,1,'cobblestone'),
     (0,1,2,'cobblestone'), (1,1,2,'cobblestone'), (2,1,2,'cobblestone'),
-    (1,1,1,'air'), # Entrada
+    (1,1,1,'air'), # Interior core access (Keep as air)
     
-    # Nivel 2 (Paredes)
-    (0,2,0,'cobblestone'), (1,2,0,'cobblestone'), (2,2,0,'cobblestone'),
+    # Nivel 2 (Paredes) - y=2
+    (0,2,0,'cobblestone'), (1,2,0,'air'),         (2,2,0,'cobblestone'), # ENTRADA SUPERIOR (1,2,0)
     (0,2,1,'cobblestone'),                         (2,2,1,'cobblestone'),
     (0,2,2,'cobblestone'), (1,2,2,'cobblestone'), (2,2,2,'cobblestone'),
 
-    # Nivel 3 (Paredes)
+    # Nivel 3 (Paredes) - y=3
     (0,3,0,'cobblestone'), (1,3,0,'cobblestone'), (2,3,0,'cobblestone'),
     (0,3,1,'cobblestone'),                         (2,3,1,'cobblestone'),
     (0,3,2,'cobblestone'), (1,3,2,'cobblestone'), (2,3,2,'cobblestone'),
     
-    # Nivel 4 (Almenas)
+    # Nivel 4 (Almenas) - y=4
     (0,4,0,'cobblestone'), (1,4,0,'air'),         (2,4,0,'cobblestone'),
     (0,4,1,'air'),         (1,4,1,'air'),         (2,4,1,'air'), 
     (0,4,2,'cobblestone'), (1,4,2,'air'),         (2,4,2,'cobblestone'),
 ]
 
 # Diseño 3: Búnker de Almacenamiento (Walls: Dirt, Roof: Cobblestone) - 4x4
-# Estructura ancha. Requiere terreno muy plano.
+# Puerta de 2 bloques de alto en (1, y, 0)
 TEMPLATE_BUNKER = [
-    # Base 4x4 (Cobblestone)
+    # Base 4x4 (Cobblestone) - y=0
     (0,0,0,'cobblestone'), (1,0,0,'cobblestone'), (2,0,0,'cobblestone'), (3,0,0,'cobblestone'),
     (0,0,1,'cobblestone'), (1,0,1,'cobblestone'), (2,0,1,'cobblestone'), (3,0,1,'cobblestone'),
     (0,0,2,'cobblestone'), (1,0,2,'cobblestone'), (2,0,2,'cobblestone'), (3,0,2,'cobblestone'),
     (0,0,3,'cobblestone'), (1,0,3,'cobblestone'), (2,0,3,'cobblestone'), (3,0,3,'cobblestone'),
 
-    # Nivel 1 (Paredes de Tierra)
-    (0,1,0,'dirt'), (1,1,0,'dirt'), (2,1,0,'dirt'), (3,1,0,'dirt'),
+    # Nivel 1 (Paredes de Tierra) - y=1
+    (0,1,0,'dirt'), (1,1,0,'air'), (2,1,0,'dirt'), (3,1,0,'dirt'), # ENTRADA INFERIOR (1,1,0)
     (0,1,1,'dirt'),                                 (3,1,1,'dirt'),
     (0,1,2,'dirt'),                                 (3,1,2,'dirt'),
     (0,1,3,'dirt'), (1,1,3,'dirt'), (2,1,3,'dirt'), (3,1,3,'dirt'),
-    (1,1,0,'air'), # Entrada
 
-    # Nivel 2 (Paredes de Tierra)
-    (0,2,0,'dirt'), (1,2,0,'dirt'), (2,2,0,'dirt'), (3,2,0,'dirt'),
+    # Nivel 2 (Paredes de Tierra) - y=2
+    (0,2,0,'dirt'), (1,2,0,'air'), (2,2,0,'dirt'), (3,2,0,'dirt'), # ENTRADA SUPERIOR (1,2,0)
     (0,2,1,'dirt'),                                 (3,2,1,'dirt'),
     (0,2,2,'dirt'),                                 (3,2,2,'dirt'),
     (0,2,3,'dirt'), (1,2,3,'dirt'), (2,2,3,'dirt'), (3,2,3,'dirt'),
 
-    # Nivel 3 (Techo Sólido Piedra)
+    # Nivel 3 (Techo Sólido Piedra) - y=3
     (0,3,0,'cobblestone'), (1,3,0,'cobblestone'), (2,3,0,'cobblestone'), (3,3,0,'cobblestone'),
     (0,3,1,'cobblestone'), (1,3,1,'cobblestone'), (2,3,1,'cobblestone'), (3,3,1,'cobblestone'),
     (0,3,2,'cobblestone'), (1,3,2,'cobblestone'), (2,3,2,'cobblestone'), (3,3,2,'cobblestone'),
