@@ -176,6 +176,19 @@ class MinerBot(BaseAgent):
         self.release_locks()
         self._mining_offset += 1 
         self.logger.info("Ciclo minería completado.")
+    
+    # --- MÉTODO PARA REINICIAR LA TAREA (FIX RE-EJECUCIÓN) ---
+    def _reset_mining_task(self):
+        """Reinicia el inventario y requisitos para una nueva tarea manual."""
+        self.requirements = {}
+        self.inventory = {mat: 0 for mat in MATERIAL_MAP.keys()}
+        self._mining_offset = 0 # Reiniciar offset para empezar desde la base
+        self.state = AgentState.IDLE
+        self.mining_sector_locked = False
+        # Forzar la recreación de la instancia de la estrategia
+        self.current_strategy_instance = self.strategy_classes[self.current_strategy_name](self.mc, self.logger)
+        self.logger.info("Tarea de minería reseteada para nueva ejecución.")
+    # -----------------------------------------------------------
 
     async def _handle_message(self, message: Dict[str, Any]):
         msg_type = message.get("type")
@@ -185,15 +198,18 @@ class MinerBot(BaseAgent):
             command = payload.get("command_name")
             if command in ['start', 'fulfill']:
                 
-                # --- FIX 1: Establecer un requisito por defecto al iniciar manualmente ---
-                # Si el BuilderBot no ha enviado requisitos (BOM), el minero extrae piedra por defecto.
-                if command == 'start' and not self.requirements:
-                    self.requirements = {"cobblestone": 100} # Tarea: Minar 100 de Cobblestone
-                    self.inventory = {mat: 0 for mat in MATERIAL_MAP.keys()}
-                    self.logger.info("Iniciando minería manual con tarea por defecto: 100 Cobblestone.")
-                # -----------------------------------------------------------------------------
+                # --- FIX RE-EJECUCIÓN: Resetear tarea al recibir start/fulfill ---
+                self._reset_mining_task()
                 
                 self._parse_start_params(payload.get("parameters", {}))
+                
+                # --- FIX REQUISITO POR DEFECTO ---
+                if command == 'start' and not self.requirements:
+                    # Tarea por defecto: minar 100 de Cobblestone
+                    self.requirements = {"cobblestone": 100} 
+                    self.logger.info("Iniciando minería manual con tarea por defecto: 100 Cobblestone.")
+                # ------------------------------------
+                
                 await self._select_adaptive_strategy() 
                 if not self._check_requirements_fulfilled():
                     self.state = AgentState.RUNNING
@@ -241,11 +257,11 @@ class MinerBot(BaseAgent):
 
     def _parse_start_params(self, params: Dict[str, Any]):
         args = params.get('args', [])
-        nx, nz, ny = None, None, None # <-- Agregamos ny
+        nx, nz, ny = None, None, None
         for a in args:
             if 'x=' in a: nx = int(a.split('=')[1])
             if 'z=' in a: nz = int(a.split('=')[1])
-            if 'y=' in a: ny = int(a.split('=')[1]) # <-- Leemos y
+            if 'y=' in a: ny = int(a.split('=')[1])
         
         if nx is None:
             try: 
@@ -256,13 +272,12 @@ class MinerBot(BaseAgent):
         self.mining_position.x = nx
         self.mining_position.z = nz
 
-        # --- FIX 2: Usar ny si fue proporcionado, sino usar getHeight ---
+        # --- FIX: Usar ny si fue proporcionado, sino usar getHeight ---
         if ny is not None:
              self.mining_position.y = ny
-             self.surface_marker_y = ny # Usar ny como altura del marcador
+             self.surface_marker_y = ny 
         else:
             try: 
-                 # Posiciona en la superficie + 1 para empezar a picar abajo
                  self.mining_position.y = self.mc.getHeight(nx, nz) + 1
                  self.surface_marker_y = self.mining_position.y
             except: 
@@ -275,6 +290,7 @@ class MinerBot(BaseAgent):
         if len(args) >= 2 and args[0] == 'strategy':
             strat = args[1].lower()
             if strat in self.strategy_classes:
+                # Recrear la instancia para resetear su estado interno
                 self.current_strategy_instance = self.strategy_classes[strat](self.mc, self.logger)
                 self.current_strategy_name = strat
                 self.logger.info(f"Estrategia manual: {strat}")
@@ -301,6 +317,7 @@ class MinerBot(BaseAgent):
             
         if new_strat != self.current_strategy_name:
             self.current_strategy_name = new_strat
+            # Recrear la instancia al cambiar de estrategia
             self.current_strategy_instance = self.strategy_classes[new_strat](self.mc, self.logger)
             self.logger.info(f"Estrategia cambiada a: {new_strat} (Objetivo: {most_needed})")
 
