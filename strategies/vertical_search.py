@@ -11,7 +11,7 @@ class VerticalSearchStrategy(BaseMiningStrategy):
     Excava una columna hacia abajo.
     """
     MIN_SAFE_Y = 5   # No bajar más allá de esto (Bedrock)
-    RESTART_Y = 65   # Altura de reinicio de fallback (solo si getHeight falla)
+    RESTART_Y = 65   # Altura de reinicio de fallback
     
     # Paso horizontal: 11 bloques (salta 10) para el patrón de rejilla de pozos
     HORIZONTAL_STEP = 11
@@ -37,7 +37,8 @@ class VerticalSearchStrategy(BaseMiningStrategy):
 
         # 1. Minar 3 bloques: el actual y dos debajo (Y, Y-1, Y-2)
         for i in range(3):
-            mine_pos = position.clone()
+            # Clonamos para asegurar que la posición de minado es estable
+            mine_pos = position.clone() 
             mine_pos.y -= i
             
             await mine_block_callback(mine_pos)
@@ -45,13 +46,13 @@ class VerticalSearchStrategy(BaseMiningStrategy):
         
         # 2. Lógica de Movimiento: CRÍTICA
         if position.y > (self.MIN_SAFE_Y + 1): 
-            # Si aún no toca fondo, nos movemos un bloque HACIA ABAJO para el siguiente ciclo.
+            # Continuar descendiendo en el pozo actual (solo movemos Y)
             position.y -= 1 
             
-            # Animación/Actualización del marcador (pequeño cambio en Z)
-            position.z += 0.001 
-            if position.z > 1.0: 
-                position.z = 0.001
+            # --- ELIMINACIÓN DEL HACK DE FLOAT ---
+            # Mantenemos X y Z como enteros estables.
+            position.x = int(position.x)
+            position.z = int(position.z)
 
             self.logger.info(f"Agente desciende. Nueva Y interna: {position.y}")
 
@@ -59,30 +60,23 @@ class VerticalSearchStrategy(BaseMiningStrategy):
             # Fondo alcanzado. Decidir si terminar el trabajo o saltar a la siguiente columna.
             
             if self._needs_more_mining(requirements, inventory):
-                # Si todavía faltan materiales, salta a la siguiente columna.
                 self.cycle_counter = 0 
                 self.logger.warning(f"Fondo alcanzado. Iniciando nuevo pozo en X + {self.HORIZONTAL_STEP}.")
                 
-                # 1. Aumentamos X (El salto de 11 bloques)
-                position.x += self.HORIZONTAL_STEP
+                # 1. Aumentamos X (Usamos int() para evitar la corrupción por floats anteriores)
+                position.x = int(position.x) + self.HORIZONTAL_STEP
+                position.z = int(position.z) # Aseguramos Z como entero
                 
-                # 2. --- FIX CRÍTICO: RECALCULAR LA ALTURA REAL DE LA SUPERFICIE ---
+                # 2. Recalculamos Y (FIX de altura)
                 try:
-                    # Usamos getHeight + 1 para empezar justo por encima de la superficie
                     new_surface_y = self.mc.getHeight(position.x, position.z) + 1
                     position.y = new_surface_y
-                    
-                    # NOTA: También es buena idea enviar este new_surface_y al MinerBot.surface_marker_y
-                    # Aunque esa tarea se hace idealmente en MinerBot, aquí aseguramos que la posición de minería sea correcta.
                 except Exception:
-                    # Fallback si la conexión MC falla
                     position.y = self.RESTART_Y
-                # -----------------------------------------------------------------
-            
+                
             else:
                  # Si ya cumplimos los requisitos, terminamos. No movemos X.
                  self.logger.info("Requisitos cumplidos. Finalizando estrategia VerticalSearch.")
-                 # Establecemos Y a la altura de reinicio para que MinerBot.decide() lo maneje.
                  position.y = self.RESTART_Y
                  
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.1) 
