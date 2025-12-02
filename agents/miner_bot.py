@@ -7,13 +7,13 @@ from agents.base_agent import BaseAgent, AgentState
 from mcpi.vec3 import Vec3
 from mcpi import block
 
-# Importar estrategias
+# Importar estrategias (asumimos que ya están corregidas)
 from strategies.base_strategy import BaseMiningStrategy
 from strategies.vertical_search import VerticalSearchStrategy
 from strategies.grid_search import GridSearchStrategy
 from strategies.vein_search import VeinSearchStrategy 
 
-# Mapeo de materiales para saber qué minar
+# Mapeo de materiales
 MATERIAL_MAP = {
     "wood": block.WOOD.id, 
     "wood_planks": block.WOOD_PLANKS.id,
@@ -68,7 +68,7 @@ class MinerBot(BaseAgent):
     
     async def _mine_current_block(self, position: Vec3) -> bool:
         """
-        Rompe el bloque. Devuelve True si rompió algo (útil o no).
+        Rompe el bloque en la posición dada y actualiza el inventario si es necesario.
         """
         x, y, z = int(position.x), int(position.y), int(position.z)
         
@@ -118,7 +118,6 @@ class MinerBot(BaseAgent):
                 req = self.requirements[material_to_count]
                 self.logger.info(f"MINADO: {material_to_count} ({self.inventory[material_to_count]}/{req})")
             
-            # Siempre devolvemos True si rompimos algo sólido, para que la estrategia avance
             return True
         except: return False
 
@@ -142,16 +141,16 @@ class MinerBot(BaseAgent):
     async def act(self):
         if self.state == AgentState.RUNNING and self.mining_sector_locked:
             
-            # --- FIX VISUALIZACIÓN: Marcador siempre en superficie ---
+            # 1. FIX VISUALIZACIÓN: Marcador siempre en superficie
             try:
                  x, z = int(self.mining_position.x), int(self.mining_position.z)
-                 # Calculamos la superficie real para pintar la lana
+                 # Obtenemos la altura REAL de la superficie para pintar la lana
                  y_surf = self.mc.getHeight(x, z) + 1
-                 # Pintamos allí, aunque el robot esté en y=10
+                 # Pintamos el marcador en la superficie
                  self._update_marker(Vec3(x, y_surf, z))
             except: pass
             
-            # Ejecutar estrategia real (que modificará self.mining_position hacia abajo/lados)
+            # 2. Ejecutar estrategia, que modificará la posición interna (Y)
             await self.current_strategy_instance.execute(
                 requirements=self.requirements,
                 inventory=self.inventory,
@@ -159,7 +158,7 @@ class MinerBot(BaseAgent):
                 mine_block_callback=self._mine_current_block 
             )
             
-            # Publicar progreso periódico
+            # 3. Publicar progreso
             await self._publish_inventory_update(status="PENDING")
             
     # --- UTILS ---
@@ -172,7 +171,7 @@ class MinerBot(BaseAgent):
     async def _complete_mining_cycle(self):
         await self._publish_inventory_update(status="SUCCESS")
         self.release_locks()
-        self._mining_offset += 1 # Siguiente pozo más lejos
+        self._mining_offset += 1 
         self.logger.info("Ciclo minería completado.")
 
     async def _handle_message(self, message: Dict[str, Any]):
@@ -196,19 +195,20 @@ class MinerBot(BaseAgent):
             self.requirements = payload.copy()
             self.logger.info(f"Nuevos requisitos recibidos: {self.requirements}")
             
-            # Ubicar al minero cerca de la zona de construcción pero con offset
+            # Reposicionar minero según zona de construcción + offset
             ctx_zone = message.get("context", {}).get("target_zone")
             if ctx_zone:
                  bx, bz = int(ctx_zone['x']), int(ctx_zone['z'])
-                 offset = 15 + (self._mining_offset * 10) # 15 bloques de margen + offset
+                 offset = 15 + (self._mining_offset * 10) 
                  
                  self.mining_position.x = bx + offset
                  self.mining_position.z = bz + offset
                  try:
+                     # Posiciona en la superficie para empezar a picar desde allí
                      self.mining_position.y = self.mc.getHeight(self.mining_position.x, self.mining_position.z) + 1
                  except: self.mining_position.y = 65
                  
-                 # Reiniciar la instancia de estrategia para que coja la nueva posición X,Z
+                 # Reiniciar la instancia de estrategia
                  self.current_strategy_instance = self.strategy_classes[self.current_strategy_name](self.mc, self.logger)
                  self.logger.info(f"Minero desplazado a: ({self.mining_position.x}, {self.mining_position.z})")
             
@@ -266,7 +266,6 @@ class MinerBot(BaseAgent):
             
         if new_strat != self.current_strategy_name:
             self.current_strategy_name = new_strat
-            # Crear nueva instancia limpia
             self.current_strategy_instance = self.strategy_classes[new_strat](self.mc, self.logger)
             self.logger.info(f"Estrategia cambiada a: {new_strat} (Objetivo: {most_needed})")
 

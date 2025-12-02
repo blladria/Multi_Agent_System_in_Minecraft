@@ -7,36 +7,44 @@ from .base_strategy import BaseMiningStrategy
 class VerticalSearchStrategy(BaseMiningStrategy):
     """
     Estrategia de Búsqueda Vertical (Quarry).
-    Excava una columna hacia abajo hasta la roca madre, luego se mueve y repite.
-    Ideal para Cobblestone y Stone.
+    Excava una columna hacia abajo.
     """
     MIN_SAFE_Y = 5   # No bajar más allá de esto (Bedrock)
-    RESTART_Y = 65   # Altura segura de reinicio si falla la lectura
+    RESTART_Y = 65   # Altura de reinicio en superficie
 
     async def execute(self, requirements: Dict[str, int], inventory: Dict[str, int], position: Vec3, mine_block_callback: Callable):
         
         self.logger.debug(f"VerticalSearch en ({position.x}, {position.y}, {position.z})")
 
-        # 1. Intentar minar el bloque actual y el de abajo (velocidad x2)
-        # Minamos en la posición actual
-        await mine_block_callback(position)
+        # 1. Minar 3 bloques: el actual y dos debajo (Y, Y-1, Y-2)
+        # Esto mina los bloques directamente bajo el "suelo" del agente (que está en position.y)
+        for i in range(3):
+            mine_pos = position.clone()
+            # El agente está en Y=superficie+1. Minamos en Y (el bloque donde está el agente) y luego Y-1, Y-2.
+            mine_pos.y -= i
+            
+            await mine_block_callback(mine_pos)
+            await asyncio.sleep(0.3) 
         
-        # 2. Descender
-        if position.y > self.MIN_SAFE_Y:
-            position.y -= 1
+        # 2. Lógica de Movimiento: CRÍTICA
+        if position.y > (self.MIN_SAFE_Y + 1): 
+            # Si aún no toca fondo, nos movemos un bloque HACIA ABAJO para el siguiente ciclo.
+            position.y -= 1 
+            self.logger.info(f"Agente desciende. Nueva Y interna: {position.y}")
         else:
-            # 3. Si tocamos fondo, nos movemos a la siguiente columna
-            self.logger.info("Fondo alcanzado. Iniciando nueva columna.")
+            # Desplazamiento Horizontal (Nueva columna)
+            self.logger.warning("Fondo alcanzado. Iniciando nueva columna.")
+            
             position.x += 1
             
-            # Reiniciar altura a la superficie
+            # Reiniciar altura a la superficie (Usando la altura real del nuevo punto X)
             try:
-                # Obtenemos la altura del nuevo punto X
                 surface_y = self.mc.getHeight(int(position.x), int(position.z))
-                # Nos ponemos un poco bajo tierra para no minar aire (y-1)
-                position.y = surface_y - 1 
-            except:
-                position.y = self.RESTART_Y
-                
-        # Pequeña pausa para no saturar
-        await asyncio.sleep(0.2)
+                # Nos ponemos en la superficie + 1 para empezar a picar abajo
+                position.y = surface_y + 1 
+            except Exception:
+                 position.y = self.RESTART_Y
+            
+            self.logger.info(f"Nuevo pozo iniciado en: ({position.x}, {position.y}, {position.z})")
+             
+        await asyncio.sleep(0.1)
