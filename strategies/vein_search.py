@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import logging
 import asyncio
 from typing import Dict, Any, Callable, List, Set, Tuple
 from mcpi.vec3 import Vec3
