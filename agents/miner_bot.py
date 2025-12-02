@@ -184,6 +184,15 @@ class MinerBot(BaseAgent):
         if msg_type.startswith("command."):
             command = payload.get("command_name")
             if command in ['start', 'fulfill']:
+                
+                # --- FIX 1: Establecer un requisito por defecto al iniciar manualmente ---
+                # Si el BuilderBot no ha enviado requisitos (BOM), el minero extrae piedra por defecto.
+                if command == 'start' and not self.requirements:
+                    self.requirements = {"cobblestone": 100} # Tarea: Minar 100 de Cobblestone
+                    self.inventory = {mat: 0 for mat in MATERIAL_MAP.keys()}
+                    self.logger.info("Iniciando minería manual con tarea por defecto: 100 Cobblestone.")
+                # -----------------------------------------------------------------------------
+                
                 self._parse_start_params(payload.get("parameters", {}))
                 await self._select_adaptive_strategy() 
                 if not self._check_requirements_fulfilled():
@@ -232,10 +241,11 @@ class MinerBot(BaseAgent):
 
     def _parse_start_params(self, params: Dict[str, Any]):
         args = params.get('args', [])
-        nx, nz = None, None
+        nx, nz, ny = None, None, None # <-- Agregamos ny
         for a in args:
             if 'x=' in a: nx = int(a.split('=')[1])
             if 'z=' in a: nz = int(a.split('=')[1])
+            if 'y=' in a: ny = int(a.split('=')[1]) # <-- Leemos y
         
         if nx is None:
             try: 
@@ -245,12 +255,20 @@ class MinerBot(BaseAgent):
             
         self.mining_position.x = nx
         self.mining_position.z = nz
-        try: 
-             self.mining_position.y = self.mc.getHeight(nx, nz) + 1
-             self.surface_marker_y = self.mining_position.y
-        except: 
-             self.mining_position.y = 65
-             self.surface_marker_y = 66
+
+        # --- FIX 2: Usar ny si fue proporcionado, sino usar getHeight ---
+        if ny is not None:
+             self.mining_position.y = ny
+             self.surface_marker_y = ny # Usar ny como altura del marcador
+        else:
+            try: 
+                 # Posiciona en la superficie + 1 para empezar a picar abajo
+                 self.mining_position.y = self.mc.getHeight(nx, nz) + 1
+                 self.surface_marker_y = self.mining_position.y
+            except: 
+                 self.mining_position.y = 65
+                 self.surface_marker_y = 66
+        # ----------------------------------------------------------------
 
     def _parse_set_strategy(self, params: Dict[str, Any]):
         args = params.get('args', [])
