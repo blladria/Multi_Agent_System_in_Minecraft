@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import logging # <-- FIX: Importado para resolver NameError
+import logging
 import asyncio
 from typing import Dict, Any, Callable
 from mcpi.vec3 import Vec3
@@ -11,7 +11,10 @@ class VerticalSearchStrategy(BaseMiningStrategy):
     Excava una columna hacia abajo.
     """
     MIN_SAFE_Y = 5   # No bajar más allá de esto (Bedrock)
-    RESTART_Y = 65   # Altura de reinicio en superficie
+    RESTART_Y = 65   # Altura de reinicio de fallback (solo si getHeight falla)
+    
+    # Paso horizontal que, según confirmaste, está bien (salta 10 bloques + 1 del pozo)
+    HORIZONTAL_STEP = 11
 
     def __init__(self, mc_connection, logger: logging.Logger):
         super().__init__(mc_connection, logger)
@@ -34,13 +37,10 @@ class VerticalSearchStrategy(BaseMiningStrategy):
             # Si aún no toca fondo, nos movemos un bloque HACIA ABAJO para el siguiente ciclo.
             position.y -= 1 
             
-            # --- FIX ANIMACIÓN REFORZADO: Forzar cambio visual flotante ---
-            # Sumar un valor flotante a Z asegura que el BaseAgent detecte un cambio
-            # de posición, obligando a actualizar el marcador sin cambiar la coordenada entera de minado.
+            # Animación/Actualización del marcador (pequeño cambio en Z)
             position.z += 0.001 
             if position.z > 1.0: 
                 position.z = 0.001
-            # ----------------------------------------------------------------
 
             self.logger.info(f"Agente desciende. Nueva Y interna: {position.y}")
 
@@ -49,11 +49,18 @@ class VerticalSearchStrategy(BaseMiningStrategy):
             self.cycle_counter = 0 
             self.logger.warning("Fondo alcanzado. Iniciando nueva columna.")
             
-            position.x += 1
+            # 1. Aumentamos X (ya confirmaste que está correcto)
+            position.x += self.HORIZONTAL_STEP
             
-            # NOTA: Ya no necesitamos recalcular la altura aquí, solo el MinerBot lo hace
-            # cuando recibe un nuevo trabajo. Aquí solo actualizamos X.
-            position.y = self.RESTART_Y # Usamos la altura de reinicio estándar para el bot minero.
+            # 2. --- FIX CRÍTICO: RECALCULAR LA ALTURA DE LA SUPERFICIE ---
+            try:
+                # Llama a la API de Minecraft para obtener la altura real de la superficie
+                new_surface_y = self.mc.getHeight(position.x, position.z) + 1
+                position.y = new_surface_y
+            except Exception:
+                # Si falla la llamada a getHeight, usamos el fallback de 65
+                position.y = self.RESTART_Y
+            # -----------------------------------------------------------
             
             self.logger.info(f"Nuevo pozo iniciado en: ({position.x}, {position.y}, {position.z})")
              
