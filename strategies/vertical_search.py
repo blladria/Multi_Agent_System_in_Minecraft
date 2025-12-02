@@ -15,7 +15,6 @@ class VerticalSearchStrategy(BaseMiningStrategy):
 
     def __init__(self, mc_connection, logger: logging.Logger):
         super().__init__(mc_connection, logger)
-        # El contador ya no es necesario con el fix del float, pero se mantiene si se usa en otra parte.
         self.cycle_counter = 0 
 
     async def execute(self, requirements: Dict[str, int], inventory: Dict[str, int], position: Vec3, mine_block_callback: Callable):
@@ -39,7 +38,7 @@ class VerticalSearchStrategy(BaseMiningStrategy):
             # Sumar un valor flotante a Z asegura que el BaseAgent detecte un cambio
             # de posición, obligando a actualizar el marcador sin cambiar la coordenada entera de minado.
             position.z += 0.001 
-            if position.z > 1.0: # Evitar que el número flotante crezca indefinidamente
+            if position.z > 1.0: 
                 position.z = 0.001
             # ----------------------------------------------------------------
 

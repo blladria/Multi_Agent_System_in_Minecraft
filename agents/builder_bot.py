@@ -8,7 +8,6 @@ from mcpi.vec3 import Vec3
 from datetime import datetime, timezone
 
 # --- 1. MAPEO DE MATERIALES (Solo Primitivos) ---
-# Limitado a lo que el MinerBot puede extraer directamente.
 MATERIAL_MAP = {
     "cobblestone": block.COBBLESTONE.id, # Se obtiene minando piedra
     "dirt": block.DIRT.id,               # Se obtiene minando tierra
@@ -17,21 +16,21 @@ MATERIAL_MAP = {
 
 # --- 2. DEFINICIÓN DE PLANTILLAS (TEMPLATES) ---
 
-# Diseño 1: Refugio Simple (Mix Cobblestone/Dirt) - 3x3
-# Puerta de 2 bloques de alto en (1, y, 0)
+# Diseño 1: Refugio Simple (3x3 - Muros de Cobblestone)
+# Muros y suelo son Cobblestone (BOM: 24 Cobble, 0 Dirt)
 TEMPLATE_SHELTER = [
     # Suelo (y=0)
     (0,0,0,'cobblestone'), (1,0,0,'cobblestone'), (2,0,0,'cobblestone'),
     (0,0,1,'cobblestone'), (1,0,1,'cobblestone'), (2,0,1,'cobblestone'),
     (0,0,2,'cobblestone'), (1,0,2,'cobblestone'), (2,0,2,'cobblestone'),
     
-    # Paredes (y=1)
-    (0,1,0,'dirt'),        (1,1,0,'air'),         (2,1,0,'dirt'), # ENTRADA INFERIOR (1,1,0)
-    (0,1,1,'dirt'),        (1,1,1,'air'),         (2,1,1,'dirt'), # Interior space
-    (0,1,2,'dirt'),        (1,1,2,'dirt'),        (2,1,2,'dirt'),
+    # Paredes (y=1) - Muros de Cobblestone
+    (0,1,0,'cobblestone'), (1,1,0,'air'),         (2,1,0,'cobblestone'), # ENTRADA INFERIOR
+    (0,1,1,'cobblestone'), (1,1,1,'air'),         (2,1,1,'cobblestone'), # Interior space
+    (0,1,2,'cobblestone'), (1,1,2,'cobblestone'), (2,1,2,'cobblestone'),
     
     # Techo (y=2)
-    (0,2,0,'cobblestone'), (1,2,0,'air'),         (2,2,0,'cobblestone'), # ENTRADA SUPERIOR (1,2,0)
+    (0,2,0,'cobblestone'), (1,2,0,'air'),         (2,2,0,'cobblestone'), # ENTRADA SUPERIOR
     (0,2,1,'cobblestone'), (1,2,1,'cobblestone'), (2,2,1,'cobblestone'),
     (0,2,2,'cobblestone'), (1,2,2,'cobblestone'), (2,2,2,'cobblestone'),
 ]
@@ -76,13 +75,13 @@ TEMPLATE_BUNKER = [
     (0,0,3,'cobblestone'), (1,0,3,'cobblestone'), (2,0,3,'cobblestone'), (3,0,3,'cobblestone'),
 
     # Nivel 1 (Paredes de Tierra) - y=1
-    (0,1,0,'dirt'), (1,1,0,'air'), (2,1,0,'dirt'), (3,1,0,'dirt'), # ENTRADA INFERIOR (1,1,0)
+    (0,1,0,'dirt'), (1,1,0,'air'), (2,1,0,'dirt'), (3,1,0,'dirt'), # ENTRADA INFERIOR
     (0,1,1,'dirt'),                                 (3,1,1,'dirt'),
     (0,1,2,'dirt'),                                 (3,1,2,'dirt'),
     (0,1,3,'dirt'), (1,1,3,'dirt'), (2,1,3,'dirt'), (3,1,3,'dirt'),
 
     # Nivel 2 (Paredes de Tierra) - y=2
-    (0,2,0,'dirt'), (1,2,0,'air'), (2,2,0,'dirt'), (3,2,0,'dirt'), # ENTRADA SUPERIOR (1,2,0)
+    (0,2,0,'dirt'), (1,2,0,'air'), (2,2,0,'dirt'), (3,2,0,'dirt'), # ENTRADA SUPERIOR
     (0,2,1,'dirt'),                                 (3,2,1,'dirt'),
     (0,2,2,'dirt'),                                 (3,2,2,'dirt'),
     (0,2,3,'dirt'), (1,2,3,'dirt'), (2,2,3,'dirt'), (3,2,3,'dirt'),
