@@ -13,7 +13,7 @@ class VerticalSearchStrategy(BaseMiningStrategy):
     MIN_SAFE_Y = 5   # No bajar más allá de esto (Bedrock)
     RESTART_Y = 65   # Altura de reinicio de fallback
     
-    # FIX CRÍTICO: Cambiamos el paso horizontal a 1 para ir al bloque ADYACENTE.
+    # FIX CRÍTICO: Cambiamos el paso horizontal a 1 para ir al bloque adyacente.
     HORIZONTAL_STEP = 1
 
     def __init__(self, mc_connection, logger: logging.Logger):
@@ -47,15 +47,23 @@ class VerticalSearchStrategy(BaseMiningStrategy):
         # Bucle optimizado: Minar varios bloques antes de ceder el control
         while blocks_mined_in_step < self.blocks_per_step and position.y > self.MIN_SAFE_Y:
             
-            # --- CORRECCIÓN CRÍTICA: Terminar Vertical Search si no se necesita más cobblestone ---
-            # Asumimos que Vertical Search se usa principalmente para cobblestone/stone
+            # --- CORRECCIÓN CRÍTICA: Terminar Vertical Search si no se necesita el material principal ---
+            if not self._needs_more_mining(requirements, inventory):
+                 self.logger.info("VerticalSearch: Todos los materiales cubiertos. Terminando forzadamente la estrategia.")
+                 self.is_finished = True
+                 return
+
+            # Si se cumple el material principal de esta estrategia (Cobblestone/Stone), terminamos para forzar Grid.
             cobblestone_needed = requirements.get("cobblestone", 0) - inventory.get("cobblestone", 0)
             stone_needed = requirements.get("stone", 0) - inventory.get("stone", 0)
             
-            if cobblestone_needed <= 0 and stone_needed <= 0:
-                 self.logger.info("VerticalSearch: Cobblestone y Stone cubiertos. Terminando forzadamente para re-seleccionar estrategia.")
+            dirt_or_sand_needed = (requirements.get("dirt", 0) - inventory.get("dirt", 0)) > 0 or \
+                                  (requirements.get("sand", 0) - inventory.get("sand", 0)) > 0
+            
+            if cobblestone_needed <= 0 and stone_needed <= 0 and dirt_or_sand_needed:
+                 self.logger.info("VerticalSearch: Cobblestone y Stone cubiertos, pero falta DIRT/SAND. Terminando para re-seleccionar a GRID.")
                  self.is_finished = True
-                 # Retornamos para que MinerBot.decide re-evalúe en el siguiente ciclo
+                 # Retornamos para que MinerBot.decide re-evalúe en el siguiente ciclo y cambie la estrategia
                  return 
             # ------------------------------------------------------------------------------------------
             

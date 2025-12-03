@@ -155,6 +155,8 @@ class MinerBot(BaseAgent):
 
     async def perceive(self):
         if self.broker.has_messages(self.agent_id):
+            # Usar 'self.broker.consume_queue' directamente aquí asegura que solo procese
+            # UN mensaje por ciclo de percepción. Esto es vital para el control del bucle.
             message = await self.broker.consume_queue(self.agent_id)
             await self._handle_message(message)
 
@@ -304,14 +306,14 @@ class MinerBot(BaseAgent):
             command = payload.get("command_name")
             
             if command == 'fulfill':
-                 # --- SOLUCIÓN DE RACE CONDITION: Consumir mensajes pendientes antes de validar ---
-                 # Ejecutar perceive varias veces para asegurar que se lean los mensajes del BuilderBot
-                 for _ in range(5):
-                     if self.broker.has_messages(self.agent_id):
-                         await self.perceive()
-                     else:
-                         await asyncio.sleep(0.01) # Pequeña pausa para ceder control
-                 # --------------------------------------------------------------------------------
+                 # *** SOLUCIÓN DE RACE CONDITION: Forzar la lectura de mensajes pendientes ***
+                 # Consumir el mensaje materials.requirements.v1 si está pendiente.
+                 while self.broker.has_messages(self.agent_id):
+                     incoming_message = await self.broker.consume_queue(self.agent_id)
+                     # Recursivamente manejar el mensaje para cargar los requisitos
+                     await self._handle_message(incoming_message)
+                     await asyncio.sleep(0.01) # Pequeña pausa para evitar bloqueo
+                 # --------------------------------------------------------------------------
                  
                  # *** RESTRICCIÓN: Solo si self.requirements NO está vacío ***
                  if not self.requirements:
@@ -368,9 +370,9 @@ class MinerBot(BaseAgent):
                     self.logger.info(f"Comando 'set strategy' recibido. Estrategia cambiada a: {self.current_strategy_name}.")
                     self.mc.postToChat(f"[Miner] Estrategia cambiada a: {self.current_strategy_name.upper()}.")
                     
-                    # Forzar una re-evaluación inmediata si estaba corriendo
+                    # Forzar una re-evaluación inmediata si estaba corriendo, rompiendo el bucle de la estrategia antigua
                     if self.state == AgentState.RUNNING:
-                         self.state = AgentState.IDLE # Forzar que pase por decide() -> RUNNING/WAITING
+                         self.state = AgentState.IDLE # Forzar re-entrada en el ciclo
                          self.state = AgentState.RUNNING
 
             elif command == 'pause':
@@ -488,7 +490,8 @@ class MinerBot(BaseAgent):
             strat = args[1].lower()
             if strat in self.strategy_classes:
                 NewStrategy = self.strategy_classes[strat]
-                self.current_strategy_instance = NewStrategy(self.mc, self.logger)
+                # Reinstancia la estrategia, permitiendo el cambio instantáneo
+                self.current_strategy_instance = NewStrategy(self.mc, self.logger) 
                 self.current_strategy_name = strat
                 self.logger.info(f"Estrategia manual: {strat}")
 
@@ -525,6 +528,7 @@ class MinerBot(BaseAgent):
         if new_strat != self.current_strategy_name:
             self.current_strategy_name = new_strat
             NewStrategy = self.strategy_classes.get(new_strat, VerticalSearchStrategy)
+            # Reinstanciar la estrategia aquí para forzar el cambio en el ciclo 'act'
             self.current_strategy_instance = NewStrategy(self.mc, self.logger)
             self.logger.info(f"Estrategia adaptativa cambiada a: {new_strat} (Por prioridad de materiales)")
 
