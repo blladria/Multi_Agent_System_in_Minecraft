@@ -275,7 +275,7 @@ class MinerBot(BaseAgent):
     def _reset_mining_task(self, reset_requirements: bool = True):
         """
         Reinicia el inventario y estado para una nueva tarea manual.
-        Si reset_requirements es False, mantiene los requisitos del BuilderBot.
+        Si reset_requirements es False, MANTIENE los requisitos cargados (para 'fulfill').
         """
         if self.mining_sector_locked:
             self.release_locks() 
@@ -304,13 +304,22 @@ class MinerBot(BaseAgent):
             command = payload.get("command_name")
             
             if command == 'fulfill':
-                 # *** RESTRICCIÓN CRÍTICA PARA 'fulfill' ***
+                 # --- SOLUCIÓN DE RACE CONDITION: Consumir mensajes pendientes antes de validar ---
+                 # Ejecutar perceive varias veces para asegurar que se lean los mensajes del BuilderBot
+                 for _ in range(5):
+                     if self.broker.has_messages(self.agent_id):
+                         await self.perceive()
+                     else:
+                         await asyncio.sleep(0.01) # Pequeña pausa para ceder control
+                 # --------------------------------------------------------------------------------
+                 
+                 # *** RESTRICCIÓN: Solo si self.requirements NO está vacío ***
                  if not self.requirements:
                      self.logger.warning("Comando 'fulfill' recibido, pero los requisitos (BOM) del Builder estan vacios. Intente usar /builder bom primero.")
                      self.mc.postToChat("[Miner] Alerta! No hay requisitos del Builder (BOM) cargados. Use /builder bom y luego /miner fulfill.")
                      return
                  
-                 # Si hay requisitos, los mantenemos y reseteamos el resto
+                 # Si hay requisitos, los mantenemos y reseteamos el resto (inventario/estado)
                  self._reset_mining_task(reset_requirements=False) 
                  self._parse_start_params(params)
                  
@@ -319,14 +328,14 @@ class MinerBot(BaseAgent):
                  target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
                  self.mc.postToChat(f"[Miner] Tarea: Recolectar BOM de BuilderBot. Requisitos: {req_str}. Estrategia: {self.current_strategy_name.upper()}. Iniciando en {target_pos}.")
                  
-                 # Iniciar la minería
+                 # Forzar la reevaluación inmediata
                  await self._select_adaptive_strategy()
                  if not self._check_requirements_fulfilled():
                      self.state = AgentState.RUNNING
                  else: self.state = AgentState.IDLE
                  
             elif command == 'start':
-                # 'start' siempre resetea los requisitos por si el usuario quiere una tarea nueva.
+                # 'start' resetea todo por si el usuario quiere una tarea nueva.
                 self._reset_mining_task(reset_requirements=True) 
                 self._parse_start_params(params)
                 
@@ -344,7 +353,7 @@ class MinerBot(BaseAgent):
                     req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
                     self.mc.postToChat(f"[Miner] Mineria re-iniciada. Objetivo: {req_str}. Estrategia: {self.current_strategy_name.upper()}.")
 
-                # Si hay requisitos establecidos, iniciar el ciclo.
+                # Forzar la reevaluación inmediata
                 if self.requirements:
                     await self._select_adaptive_strategy() 
                     if not self._check_requirements_fulfilled():
@@ -358,6 +367,11 @@ class MinerBot(BaseAgent):
                 if self.current_strategy_name in self.strategy_classes:
                     self.logger.info(f"Comando 'set strategy' recibido. Estrategia cambiada a: {self.current_strategy_name}.")
                     self.mc.postToChat(f"[Miner] Estrategia cambiada a: {self.current_strategy_name.upper()}.")
+                    
+                    # Forzar una re-evaluación inmediata si estaba corriendo
+                    if self.state == AgentState.RUNNING:
+                         self.state = AgentState.IDLE # Forzar que pase por decide() -> RUNNING/WAITING
+                         self.state = AgentState.RUNNING
 
             elif command == 'pause':
                 self.handle_pause()
@@ -389,8 +403,7 @@ class MinerBot(BaseAgent):
                  self.inventory = {mat: 0 for mat in MATERIAL_MAP.keys()}
                  self.logger.info(f"Nuevos requisitos cargados: {self.requirements}")
             
-            # --- MODIFICACIÓN: SOLO INICIAR SI EL STATUS ES PENDING ---
-            # Si el status es ACKNOWLEDGED (desde /builder bom), solo cargamos requisitos.
+            # --- LÓGICA DE INICIO: Solo iniciar si el status es PENDING ---
             if message.get("status") == "PENDING":
                 ctx_zone = message.get("context", {}).get("target_zone")
                 if ctx_zone:
@@ -423,7 +436,6 @@ class MinerBot(BaseAgent):
             else:
                  # Mensaje de ACKNOWLEDGED, solo se cargó el plan.
                  self.mc.postToChat(f"[Miner] Requisitos cargados (ACKNOWLEDGED). Use /miner fulfill para iniciar.")
-            # --- FIN MODIFICACIÓN ---
 
 
         elif msg_type == "lock.spatial.v1":
@@ -492,12 +504,10 @@ class MinerBot(BaseAgent):
         # --- LÓGICA DE PRIORIDAD ESPECÍFICA ---
         
         # 1. PRIORIDAD MÁXIMA: Dirt o Sand (Usar Grid Search)
-        # Esto asegura que Grid se usa primero si se necesita tierra.
         if pending.get("dirt", 0) > 0 or pending.get("sand", 0) > 0:
             new_strat = "grid" 
         
         # 2. SEGUNDA PRIORIDAD: Cobblestone o Stone (Usar Vertical Search)
-        # Solo se verifica si la prioridad 1 está cubierta.
         elif any(pending.get(mat, 0) > 0 for mat in ["cobblestone", "stone"]):
             new_strat = "vertical" 
         

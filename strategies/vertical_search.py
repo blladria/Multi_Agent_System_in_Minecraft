@@ -47,10 +47,20 @@ class VerticalSearchStrategy(BaseMiningStrategy):
         # Bucle optimizado: Minar varios bloques antes de ceder el control
         while blocks_mined_in_step < self.blocks_per_step and position.y > self.MIN_SAFE_Y:
             
+            # --- CORRECCIÓN CRÍTICA: Terminar Vertical Search si no se necesita más cobblestone ---
+            # Asumimos que Vertical Search se usa principalmente para cobblestone/stone
+            cobblestone_needed = requirements.get("cobblestone", 0) - inventory.get("cobblestone", 0)
+            stone_needed = requirements.get("stone", 0) - inventory.get("stone", 0)
+            
+            if cobblestone_needed <= 0 and stone_needed <= 0:
+                 self.logger.info("VerticalSearch: Cobblestone y Stone cubiertos. Terminando forzadamente para re-seleccionar estrategia.")
+                 self.is_finished = True
+                 # Retornamos para que MinerBot.decide re-evalúe en el siguiente ciclo
+                 return 
+            # ------------------------------------------------------------------------------------------
+            
             # 1. Minar el bloque actual
             mine_pos = position.clone() 
-            # Ya no necesitamos minar 3 a la vez, el MinerBot está en Y+1, mina Y-1 (suelo)
-            # Para la estrategia vertical, minamos en la posición actual de Y
             
             await mine_block_callback(mine_pos)
             blocks_mined_in_step += 1

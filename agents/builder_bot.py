@@ -324,7 +324,6 @@ class BuilderBot(BaseAgent):
                         # Si ya tenemos zona, actualizar BOM al instante (sigue la lógica de auto-calculo si hay mapa)
                         if self.target_zone:
                             self.required_bom = self._calculate_bom_for_structure()
-                            # En el flujo 'plan set' se mantiene el comportamiento original de publicar PENDING si hay mapa.
                             await self._publish_requirements_to_miner()
                     else:
                         self.mc.postToChat(f"[Builder] No conozco la plantilla '{template_name}'.")
@@ -348,7 +347,7 @@ class BuilderBot(BaseAgent):
                 self._clear_marker()
 
             elif command == 'bom':
-                 # --- MODIFICACIÓN: BOM SÓLO MUESTRA Y PÚBLICA COMO ACKNOWLEDGED ---
+                 # --- LÓGICA: BOM SÓLO MUESTRA Y PÚBLICA COMO ACKNOWLEDGED ---
                  self.required_bom = self._calculate_bom_for_structure()
                  
                  req_str = ", ".join([f"{q} {m}" for m, q in self.required_bom.items()])
@@ -363,7 +362,7 @@ class BuilderBot(BaseAgent):
                  else:
                      self.logger.warning(f"Comando 'bom' recibido. La plantilla '{self.current_template_name}' no requiere materiales.")
                      self.mc.postToChat(f"[Builder] Alerta: La plantilla actual '{self.current_template_name}' no requiere materiales.")
-                 # --- FIN DE MODIFICACIÓN ---
+                 # --- FIN DE LÓGICA ---
 
             elif command == 'status':
                 await self._publish_status()
