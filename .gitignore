@@ -16,3 +16,6 @@ logs/
 
 # Archivos de IDE (Opcional, pero recomendado para mantener limpio el repo)
 .vscode/
+
+# Archivos de estado de los agentes (Checkpoints)
+checkpoints/
