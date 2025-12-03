@@ -276,33 +276,25 @@ class ExplorerBot(BaseAgent):
             params = payload.get("parameters", {})
             
             if command == 'start':
-                # FIX 1: Confirmación de rango por defecto
                 
-                # Verifica si el argumento 'range=' fue proporcionado
-                range_provided = any(arg.startswith('range=') for arg in args) 
-                
+                # Se mantiene la lógica de start/parse (ya funciona bien)
                 self._parse_start_params(params)
                 self.map_data = {} # Resetear memoria anterior
                 self.state = AgentState.RUNNING
 
-                # Si el rango NO fue proporcionado, se usó el valor por defecto (o el último valor, que por defecto es 30)
-                if not range_provided:
-                    self.mc.postToChat(f"[Explorer] Iniciando exploración en ({int(self.exploration_position.x)}, {int(self.exploration_position.z)}) con rango por defecto: {self.exploration_size}x{self.exploration_size}.")
+                # --- MEJORA DE FEEDBACK ---
+                self.logger.info(f"Comando 'start' recibido. Iniciando exploración.")
+                self.mc.postToChat(f"[Explorer] 🗺️ Exploración iniciada en ({int(self.exploration_position.x)}, {int(self.exploration_position.z)}), rango: {self.exploration_size}x{self.exploration_size}. Estado: RUNNING.")
+                # --- FIN MEJORA ---
             
             elif command == 'stop': 
                 self.handle_stop()
-                # <<<<<<<<<<<<<<< INICIO DE MODIFICACIÓN >>>>>>>>>>>>>>>
-                try:
-                    # Mensaje de confirmación de parada al chat
-                    self.mc.postToChat(f"[{self.agent_id}] Exploración detenida y estado guardado.")
-                except Exception:
-                    pass
-                # <<<<<<<<<<<<<<< FIN DE MODIFICACIÓN >>>>>>>>>>>>>>>
-            
-            elif command == 'pause': 
-                self.handle_pause()
-            elif command == 'resume': 
-                self.handle_resume()
+                # --- MEJORA DE FEEDBACK ---
+                self.logger.info(f"Comando 'stop' recibido. Exploración detenida y estado guardado.")
+                self.mc.postToChat(f"[Explorer] 🛑 Exploración detenida. Estado: STOPPED.")
+                self._clear_marker() # Aseguramos que el marcador desaparezca
+                # --- FIN MEJORA ---
+
             
             elif command == 'set':
                 # Permite cambiar el tamaño: /explorer set range=<int>
@@ -315,18 +307,32 @@ class ExplorerBot(BaseAgent):
                     try: 
                         new_range = int(arg_map['range'])
                         
-                        # FIX 2: Confirmación de cambio de rango
+                        # FIX: Confirmación de cambio de rango
                         if new_range != self.exploration_size:
                             self.exploration_size = new_range
-                            self.mc.postToChat(f"[Explorer] Rango de exploración cambiado a: {new_range}x{new_range}.")
+                            
+                            # --- MEJORA DE FEEDBACK ---
+                            self.logger.info(f"Comando 'set range' recibido. Nuevo rango: {new_range}.")
+                            self.mc.postToChat(f"[Explorer] 📏 Rango de exploración cambiado a: {new_range}x{new_range}.")
+                            # --- FIN MEJORA ---
                         
                     except ValueError:
-                        self.mc.postToChat(f"[Explorer] Error: El rango '{arg_map['range']}' debe ser un número entero.")
-                    except Exception:
-                         pass
+                        self.mc.postToChat(f"[Explorer] ❌ Error: El rango '{arg_map['range']}' debe ser un número entero.")
+                    except Exception as e:
+                         self.logger.error(f"Error al cambiar rango: {e}")
             
             elif command == 'status':
                 await self._publish_status()
+                
+            elif command == 'pause':
+                self.handle_pause()
+                self.logger.info(f"Comando 'pause' recibido. Estado: PAUSED.")
+                self.mc.postToChat(f"[Explorer] ⏸️ Pausado. Estado: PAUSED.")
+                
+            elif command == 'resume':
+                self.handle_resume()
+                self.logger.info(f"Comando 'resume' recibido. Estado: RUNNING.")
+                self.mc.postToChat(f"[Explorer] ▶️ Reanudado. Estado: RUNNING.")
 
 
     def _parse_start_params(self, params: Dict[str, Any]):
@@ -373,5 +379,8 @@ class ExplorerBot(BaseAgent):
             f"Zona: ({int(self.exploration_position.x)}, {int(self.exploration_position.z)}) | "
             f"Tamaño: {self.exploration_size}x{self.exploration_size}"
         )
+        # --- MEJORA DE FEEDBACK ---
+        self.logger.info(f"Comando 'status' recibido. Reportando: {self.state.name}")
+        # --- FIN MEJORA ---
         try: self.mc.postToChat(status_message)
         except: pass

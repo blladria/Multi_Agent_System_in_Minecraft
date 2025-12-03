@@ -7,11 +7,12 @@ from agents.base_agent import BaseAgent, AgentState
 from mcpi.vec3 import Vec3
 from mcpi import block
 
-# Importar estrategias (asumimos que ya están corregidas)
-from strategies.base_strategy import BaseMiningStrategy
-from strategies.vertical_search import VerticalSearchStrategy
-from strategies.grid_search import GridSearchStrategy
-from strategies.vein_search import VeinSearchStrategy 
+# NUEVAS IMPORTACIONES PARA REFLEXIÓN
+from core.agent_manager import AgentDiscovery 
+from strategies.base_strategy import BaseMiningStrategy # Solo necesitamos la clase base para el tipado
+
+# ELIMINADAS: Las importaciones de estrategias específicas (VerticalSearchStrategy, GridSearchStrategy, VeinSearchStrategy) 
+# se han eliminado, ahora se descubren automáticamente.
 
 # Mapeo de materiales
 MATERIAL_MAP = {
@@ -52,14 +53,18 @@ class MinerBot(BaseAgent):
         # NEW: Almacena la altura Y fija del marcador visual en superficie
         self.surface_marker_y = 66 
         
-        # Estrategias Disponibles
-        self.strategy_classes: Dict[str, Type[BaseMiningStrategy]] = { 
-            "vertical": VerticalSearchStrategy,
-            "grid": GridSearchStrategy,
-            "vein": VeinSearchStrategy,
-        }
+        # Estrategias Disponibles: DESCUBRIMIENTO DINÁMICO (Reflection)
+        self.strategy_classes: Dict[str, Type[BaseMiningStrategy]] = AgentDiscovery.discover_strategies()
+        
+        # Determinar estrategia inicial (usando 'vertical' como fallback)
         self.current_strategy_name = "vertical" 
-        self.current_strategy_instance = VerticalSearchStrategy(self.mc, self.logger)
+        
+        # Instanciar la estrategia (usando el tipo descubierto)
+        # Se usa BaseMiningStrategy como fallback si 'vertical' no existe por alguna razón
+        InitialStrategy = self.strategy_classes.get(self.current_strategy_name, BaseMiningStrategy)
+        self.current_strategy_instance = InitialStrategy(self.mc, self.logger)
+        
+        self.logger.info(f"MinerBot: Estrategias descubiertas: {list(self.strategy_classes.keys())}. Inicial: {self.current_strategy_name}")
         
         # Marcador Amarillo (Lana Amarilla = data 4)
         self._set_marker_properties(block.WOOL.id, 4)
@@ -233,6 +238,9 @@ class MinerBot(BaseAgent):
         self.release_locks()
         self._mining_offset += 1 
         self.logger.info("Ciclo minería completado.")
+        # --- MEJORA DE FEEDBACK ---
+        self.mc.postToChat(f"[Miner] ✅ Ciclo de minería completado. Requisitos cubiertos.")
+        # --- FIN MEJORA ---
     
     # --- MÉTODO PARA REINICIAR LA TAREA (FIX RE-EJECUCIÓN) ---
     def _reset_mining_task(self):
@@ -248,7 +256,10 @@ class MinerBot(BaseAgent):
         self.mining_sector_locked = False
         self.locked_sector_id = ""
         # Forzar la recreación de la instancia de la estrategia
-        self.current_strategy_instance = self.strategy_classes[self.current_strategy_name](self.mc, self.logger)
+        # Utiliza la clase descubierta dinámicamente
+        NewStrategy = self.strategy_classes.get(self.current_strategy_name)
+        if NewStrategy:
+             self.current_strategy_instance = NewStrategy(self.mc, self.logger)
         self.logger.info("Tarea de minería reseteada para nueva ejecución.")
     # -----------------------------------------------------------
 
@@ -270,18 +281,51 @@ class MinerBot(BaseAgent):
                     # Tarea por defecto: minar 100 de Cobblestone
                     self.requirements = {"cobblestone": 100} 
                     self.logger.info("Iniciando minería manual con tarea por defecto: 100 Cobblestone.")
+                
+                # --- MEJORA DE FEEDBACK (start/fulfill) ---
+                target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
+                req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
+                
+                self.mc.postToChat(f"[Miner] ⛏️ Minería iniciada en {target_pos}. Objetivo: {req_str}. Estrategia: {self.current_strategy_name.upper()}.")
+                # --- FIN MEJORA ---
+                
                 # ------------------------------------
                 
                 await self._select_adaptive_strategy() 
                 if not self._check_requirements_fulfilled():
                     self.state = AgentState.RUNNING
                 else: self.state = AgentState.IDLE
-            elif command == 'set': self._parse_set_strategy(payload.get("parameters", {}))
-            elif command == 'pause': self.handle_pause()
-            elif command == 'resume': self.handle_resume()
-            elif command == 'stop': self.handle_stop()
+            elif command == 'set': 
+                self._parse_set_strategy(payload.get("parameters", {}))
+                
+                # --- MEJORA DE FEEDBACK (set strategy) ---
+                if self.current_strategy_name in self.strategy_classes:
+                    self.logger.info(f"Comando 'set strategy' recibido. Estrategia cambiada a: {self.current_strategy_name}.")
+                    self.mc.postToChat(f"[Miner] ⚙️ Estrategia cambiada a: {self.current_strategy_name.upper()}.")
+                # --- FIN MEJORA ---
+
+            elif command == 'pause':
+                self.handle_pause()
+                self.logger.info(f"Comando 'pause' recibido. Estado: PAUSED.")
+                self.mc.postToChat(f"[Miner] ⏸️ Pausado. Estado: PAUSED.")
+                
+            elif command == 'resume':
+                self.handle_resume()
+                self.logger.info(f"Comando 'resume' recibido. Estado: RUNNING.")
+                self.mc.postToChat(f"[Miner] ▶️ Reanudado. Estado: RUNNING.")
+
+            elif command == 'stop':
+                self.handle_stop()
+                self.logger.info(f"Comando 'stop' recibido. Minería detenida y locks liberados.")
+                self.mc.postToChat(f"[Miner] 🛑 Detenido. Locks liberados. Estado: STOPPED.")
+                self._clear_marker()
+
+            elif command == 'status':
+                await self._publish_status()
+
             
         elif msg_type == "materials.requirements.v1":
+            # ... (Lógica de requisitos)
             self.requirements = payload.copy()
             self.logger.info(f"Nuevos requisitos recibidos: {self.requirements}")
             
@@ -310,7 +354,10 @@ class MinerBot(BaseAgent):
                  # ----------------------------------------------------------------
                  
                  # Reiniciar la instancia de estrategia
-                 self.current_strategy_instance = self.strategy_classes[self.current_strategy_name](self.mc, self.logger)
+                 NewStrategy = self.strategy_classes.get(self.current_strategy_name)
+                 if NewStrategy:
+                    self.current_strategy_instance = NewStrategy(self.mc, self.logger)
+
                  self.logger.info(f"Minero desplazado a: ({self.mining_position.x}, {self.mining_position.z})")
             
             await self._select_adaptive_strategy()
@@ -371,7 +418,8 @@ class MinerBot(BaseAgent):
             strat = args[1].lower()
             if strat in self.strategy_classes:
                 # Recrear la instancia para resetear su estado interno
-                self.current_strategy_instance = self.strategy_classes[strat](self.mc, self.logger)
+                NewStrategy = self.strategy_classes[strat]
+                self.current_strategy_instance = NewStrategy(self.mc, self.logger)
                 self.current_strategy_name = strat
                 self.logger.info(f"Estrategia manual: {strat}")
 
@@ -398,7 +446,9 @@ class MinerBot(BaseAgent):
         if new_strat != self.current_strategy_name:
             self.current_strategy_name = new_strat
             # Recrear la instancia al cambiar de estrategia
-            self.current_strategy_instance = self.strategy_classes[new_strat](self.mc, self.logger)
+            NewStrategy = self.strategy_classes.get(new_strat)
+            if NewStrategy:
+                self.current_strategy_instance = NewStrategy(self.mc, self.logger)
             self.logger.info(f"Estrategia cambiada a: {new_strat} (Objetivo: {most_needed})")
 
     async def _publish_inventory_update(self, status: str):
@@ -414,3 +464,17 @@ class MinerBot(BaseAgent):
             "context": {"required_bom": self.requirements}
         }
         await self.broker.publish(msg)
+
+    async def _publish_status(self):
+        # Muestra el estado actual, inventario y estrategia
+        inv_str = ", ".join([f"{q} {m}" for m, q in self.inventory.items() if q > 0])
+        req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
+        status_message = (
+            f"[{self.agent_id}] Estado: {self.state.name} | "
+            f"Estrategia: {self.current_strategy_name.upper()} | "
+            f"Inventario: {inv_str if inv_str else 'Vacío'} | "
+            f"Requisitos: {req_str if req_str else 'Ninguno'}"
+        )
+        self.logger.info(f"Comando 'status' recibido. Reportando: {self.state.name}")
+        try: self.mc.postToChat(status_message)
+        except: pass

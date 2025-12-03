@@ -7,10 +7,12 @@ import os
 import logging.handlers
 from datetime import datetime
 import pkgutil
-from typing import Dict
+from typing import Dict, Type # Importación añadida
 from mcpi.minecraft import Minecraft
 from core.message_broker import MessageBroker
 from agents.base_agent import BaseAgent, AgentState 
+# NUEVA IMPORTACIÓN: Necesaria para el descubrimiento de estrategias
+from strategies.base_strategy import BaseMiningStrategy 
 
 # Configuración del logger global para capturar logs antes de instanciar la clase
 logger = logging.getLogger("AgentManagerGlobal")
@@ -52,31 +54,51 @@ def setup_system_logging(log_file_name: str = 'system.log'):
     
     logging.getLogger("LoggingSetup").info(f"Logging configurado en: {log_file_name}")
 
-# --- CLASE DE AYUDA PARA LA REFLEXIÓN ---
+# --- CLASE DE AYUDA PARA LA REFLEXIÓN (MODIFICADA PARA SER GENÉRICA) ---
 
 class AgentDiscovery:
+    
     @staticmethod
-    def discover_agents(package_name: str = 'agents') -> list[type[BaseAgent]]:
-        discovered_agents = []
+    def _discover_classes(package_name: str, base_class: Type) -> list[Type]:
+        """Método genérico para descubrir subclases de una clase base en un paquete."""
+        discovered_classes = []
         try:
+            # Importa dinámicamente el paquete (e.g., 'agents' o 'strategies')
             package = __import__(package_name)
+            
+            # Recorre todos los módulos dentro de ese paquete
             for _, name, is_pkg in pkgutil.walk_packages(package.__path__):
                 if not is_pkg:
                     try:
+                        # Importa dinámicamente el módulo (e.g., 'agents.builder_bot')
                         module = __import__(f"{package_name}.{name}", fromlist=[name])
+                        
+                        # Inspecciona los miembros del módulo en busca de clases
                         for item_name, item_obj in inspect.getmembers(module, inspect.isclass):
-                            if (issubclass(item_obj, BaseAgent) and 
-                                item_obj is not BaseAgent and 
+                            if (issubclass(item_obj, base_class) and 
+                                item_obj is not base_class and 
                                 item_obj.__module__.startswith(package_name)):
-                                discovered_agents.append(item_obj)
-                                logging.getLogger("AgentDiscovery").info(f"Descubierto: {item_name}")
+                                discovered_classes.append(item_obj)
+                                logging.getLogger("ClassDiscovery").info(f"Descubierta clase {base_class.__name__} en {package_name}: {item_name}")
                     except ImportError as e:
-                        logging.getLogger("AgentDiscovery").error(f"Error importando {name}: {e}")
+                        logging.getLogger("ClassDiscovery").error(f"Error importando {name}: {e}")
         except Exception as e:
-            logging.getLogger("AgentDiscovery").error(f"Error fatal discovery: {e}")
-        return discovered_agents
+            logging.getLogger("ClassDiscovery").error(f"Error fatal discovery: {e}")
+        return discovered_classes
 
-# --- CLASE PRINCIPAL: AGENT MANAGER ---
+    @staticmethod
+    def discover_agents(package_name: str = 'agents') -> list[type[BaseAgent]]:
+        """Descubre todas las clases de Agente."""
+        return AgentDiscovery._discover_classes(package_name, BaseAgent)
+
+    @staticmethod
+    def discover_strategies(package_name: str = 'strategies') -> dict[str, type[BaseMiningStrategy]]:
+        """Descubre todas las clases de Estrategia y las mapea por nombre clave para MinerBot."""
+        strategy_classes = AgentDiscovery._discover_classes(package_name, BaseMiningStrategy)
+        # Mapea 'VerticalSearchStrategy' a 'vertical' (quitando 'Strategy' y en minúsculas)
+        return {cls.__name__.replace('Strategy', '').lower(): cls for cls in strategy_classes}
+
+# --- CLASE PRINCIPAL: AGENT MANAGER (Sin cambios en su lógica principal) ---
 
 class AgentManager:
     """Orquesta el sistema y gestiona el ciclo de vida."""
@@ -94,6 +116,7 @@ class AgentManager:
 
     def initialize_minecraft(self):
         try:
+            # ... (Lógica de inicialización)
             self.mc = Minecraft.create()
             self.mc.postToChat("Manager: Sistema iniciado.")
             self.logger.info("Conexion con Minecraft API exitosa.")
@@ -113,6 +136,7 @@ class AgentManager:
 
         for AgentClass in AgentClasses:
             agent_id = AgentClass.__name__
+            # ... (Resto de la lógica de inicio)
             agent_instance = AgentClass(agent_id, self.mc, self.broker)
             self.agents[agent_id] = agent_instance
             self.broker.subscribe(agent_id)
@@ -126,6 +150,7 @@ class AgentManager:
         await self._chat_command_monitor()
         
     async def _chat_command_monitor(self):
+        # ... (Lógica de monitorización)
         self.mc.events.clearAll()
         self.logger.info("Monitor de chat activo.")
         
@@ -140,7 +165,7 @@ class AgentManager:
                 await asyncio.sleep(5)
 
     async def _broadcast_control_command(self, command_name: str):
-        """Envía un comando de control a TODOS los agentes registrados."""
+        # ... (Lógica de broadcast)
         self.logger.info(f"Broadcasting comando: {command_name}")
         self.mc.postToChat(f"Manager: Ejecutando '{command_name.upper()}' global.")
         
