@@ -19,6 +19,7 @@ class VerticalSearchStrategy(BaseMiningStrategy):
     def __init__(self, mc_connection, logger: logging.Logger):
         super().__init__(mc_connection, logger)
         self.cycle_counter = 0 
+        self.is_finished = False # Nuevo flag para indicar al MinerBot que debe re-evaluar
 
     # --- FUNCIÓN DE AYUDA PARA CHECKEO DE REQUISITOS ---
     def _needs_more_mining(self, requirements: Dict[str, int], inventory: Dict[str, int]) -> bool:
@@ -33,6 +34,11 @@ class VerticalSearchStrategy(BaseMiningStrategy):
     
     async def execute(self, requirements: Dict[str, int], inventory: Dict[str, int], position: Vec3, mine_block_callback: Callable):
         
+        # Si ya hemos indicado que terminamos, no hacemos nada.
+        if self.is_finished:
+             await asyncio.sleep(0.1)
+             return
+             
         self.logger.debug(f"VerticalSearch en ({position.x}, {position.y}, {position.z})")
 
         # 1. Minar 3 bloques: el actual y dos debajo (Y, Y-1, Y-2)
@@ -68,6 +74,7 @@ class VerticalSearchStrategy(BaseMiningStrategy):
                 
                 # 2. Recalculamos Y (FIX de altura, para empezar en la superficie del nuevo X)
                 try:
+                    # El MinerBot se encargará de re-lockear/reubicar
                     new_surface_y = self.mc.getHeight(position.x, position.z) + 1
                     position.y = new_surface_y
                 except Exception:
@@ -76,6 +83,8 @@ class VerticalSearchStrategy(BaseMiningStrategy):
             else:
                  # Si ya cumplimos los requisitos, terminamos. No movemos X.
                  self.logger.info("Requisitos cumplidos. Finalizando estrategia VerticalSearch.")
+                 # Establecemos el flag para que MinerBot pase a IDLE
+                 self.is_finished = True 
                  position.y = self.RESTART_Y
                  
         await asyncio.sleep(0.1)
