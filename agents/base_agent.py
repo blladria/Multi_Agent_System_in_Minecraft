@@ -8,6 +8,10 @@ from enum import Enum, auto
 from mcpi import block 
 from mcpi.vec3 import Vec3
 
+# Importaciones para Checkpointing
+import json
+import os
+
 # La configuración de logging se gestiona de forma centralizada en main.py
 
 class AgentState(Enum):
@@ -37,6 +41,10 @@ class BaseAgent(ABC):
         
         # Checkpointing y Contexto 
         self.context = {} 
+        self.checkpoint_file = os.path.join('checkpoints', f'{self.agent_id}_state.json')
+        
+        # Intentar cargar el estado si existe
+        self._load_checkpoint()
 
         # VISUALIZACIÓN (NUEVO)
         self.marker_block_id = block.WOOL.id # Default: Lana
@@ -137,7 +145,9 @@ class BaseAgent(ABC):
         Bucle principal. NO SE BLOQUEA EN PAUSA, solo salta decide/act.
         Esto permite recibir el comando RESUME o STOP mientras está pausado.
         """
-        self.state = AgentState.IDLE
+        # Intentar cargar el estado (ej: si venimos de un STOP anterior)
+        # El estado inicial se establece en __init__, lo mantenemos así.
+        
         self.logger.info("Ciclo de ejecución iniciado.")
 
         # El bucle se mantiene vivo mientras no sea un estado terminal
@@ -189,13 +199,58 @@ class BaseAgent(ABC):
         # self.mc.postToChat(f"[{self.agent_id}] DETENIDO (Fin del proceso).") # El Manager hace el postToChat
         self.logger.info(f"{self.agent_id} deteniendo operaciones.")
 
-    # --- Métodos de Checkpointing y Sincronización ---
+    # --- Métodos de Checkpointing y Sincronización (Implementación de Serialización) ---
 
     def _save_checkpoint(self):
-        self.logger.debug(f"Checkpoint guardado. Ctx: {self.context}")
+        """Guarda el contexto actual y el estado en un archivo JSON."""
+        # Asegurarse de que el directorio exista
+        os.makedirs('checkpoints', exist_ok=True)
+        
+        # 1. Preparar el estado completo
+        # Clonamos el contexto y añadimos el estado y la posición del marcador
+        state_to_save = {
+            "state": self._state.name,
+            "marker_position": (self.marker_position.x, self.marker_position.y, self.marker_position.z) if hasattr(self, 'marker_position') else (0, 70, 0),
+            "context": self.context # El contexto debe contener datos serializables (str, int, dict, list)
+        }
+        
+        try:
+            with open(self.checkpoint_file, 'w') as f:
+                json.dump(state_to_save, f, indent=4)
+            self.logger.info(f"Checkpoint guardado en: {self.checkpoint_file}")
+        except Exception as e:
+            self.logger.error(f"Error al guardar checkpoint: {e}")
 
     def _load_checkpoint(self):
-        self.logger.debug(f"Checkpoint cargado. Ctx: {self.context}")
+        """Carga el estado y el contexto desde un archivo JSON, si existe."""
+        if not os.path.exists(self.checkpoint_file):
+            return
+
+        try:
+            with open(self.checkpoint_file, 'r') as f:
+                state_loaded = json.load(f)
+            
+            # 1. Restaurar el estado y el contexto
+            self._state = AgentState[state_loaded.get("state", "IDLE")]
+            self.context = state_loaded.get("context", {})
+
+            # 2. Restaurar la posición del marcador
+            mx, my, mz = state_loaded.get("marker_position", (0, 70, 0))
+            self.marker_position = Vec3(mx, my, mz)
+
+            self.logger.info(f"Checkpoint cargado. Estado: {self._state.name}")
+
+            # Limpiamos el archivo después de cargarlo para que el próximo inicio sea limpio, 
+            # a menos que se quiera persistir el estado entre ejecuciones.
+            # Lo dejamos para que se persista el estado si el agente termina en STOPPED y se reinicia el sistema.
+            
+        except Exception as e:
+            self.logger.error(f"Error al cargar checkpoint: {e}. Reiniciando estado a IDLE.")
+            self._state = AgentState.IDLE
+            self.context = {}
 
     def release_locks(self):
         self.logger.info("Locks liberados.")
+        # Se necesita un método de liberación de locks específico para MinerBot
+        # La propiedad 'state' del BaseAgent llama a este método genérico.
+        # MinerBot ya sobrescribe esto en su propia clase.
