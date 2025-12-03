@@ -13,7 +13,8 @@ logger = logging.getLogger("JSONValidator")
 AGENT_IDENTIFIERS = ["ExplorerBot", "MinerBot", "BuilderBot", "Manager"]
 
 # Estados de los mensajes (SUCCESS es un estado requerido)
-MESSAGE_STATUSES = ["SUCCESS", "ERROR", "PENDING", "ACKNOWLEDGMENT"]
+# CORRECCIÓN: Se ha añadido "ACKNOWLEDGED" para permitir el flujo manual del Builder
+MESSAGE_STATUSES = ["SUCCESS", "ERROR", "PENDING", "ACKNOWLEDGMENT", "ACKNOWLEDGED"]
 
 # Esquema para la sección 'context' (metadatos opcionales, pero estructurados)
 CONTEXT_SCHEMA = {
@@ -22,7 +23,7 @@ CONTEXT_SCHEMA = {
         "task_id": {"type": "string"},
         "state": {"type": "string", "enum": ["RUNNING", "PAUSED", "WAITING", "STOPPED"]},
         "correlation_id": {"type": "string"},
-        "locked_sector": {"type": "string", "description": "Coordenadas del sector bloqueado."}, # Nuevo
+        "locked_sector": {"type": "string", "description": "Coordenadas del sector bloqueado."}, 
     },
     "additionalProperties": True,
 }
@@ -34,7 +35,6 @@ BASE_SCHEMA = {
     "properties": {
         # Campos Requeridos por el protocolo
         "type": {"type": "string", "description": "Categoría del mensaje (ej: inventory.v1)"},
-        # Añadir "All" como target para broadcasts [cite: 160]
         "source": {"type": "string", "enum": AGENT_IDENTIFIERS, "description": "Agente emisor"},
         "target": {"type": "string", "enum": AGENT_IDENTIFIERS + ["All"], "description": "Agente receptor (o 'All')"}, 
         "timestamp": {"type": "string", "format": "date-time", "description": "Hora en formato ISO 8601 UTC"},
@@ -60,7 +60,6 @@ MATERIALS_REQUIREMENTS_SCHEMA = dict(BASE_SCHEMA, **{
                 # REGLA: Todos los materiales listados deben ser enteros >= 1
                 "^.*$": {"type": "integer", "minimum": 1}
             },
-            # FIX CRÍTICO: Eliminamos 'required: ["cobblestone", "dirt"]'
             "required": [], 
             "additionalProperties": True
         }
@@ -142,7 +141,7 @@ BUILD_STATUS_SCHEMA = dict(BASE_SCHEMA, **{
     })
 })
 
-# 6. Nuevo: Esquema para Bloqueo/Liberación Espacial (lock.spatial.v1 / unlock.spatial.v1) [cite: 170]
+# 6. Nuevo: Esquema para Bloqueo/Liberación Espacial (lock.spatial.v1 / unlock.spatial.v1)
 SPATIAL_LOCK_SCHEMA = dict(BASE_SCHEMA, **{
     "properties": dict(BASE_SCHEMA['properties'], **{
         "type": {"enum": ["lock.spatial.v1", "unlock.spatial.v1"]},
@@ -171,8 +170,8 @@ MESSAGE_SCHEMAS = {
     "map.v1": MAP_SCHEMA,
     "command": COMMAND_SCHEMA,
     "build.status.v1": BUILD_STATUS_SCHEMA,
-    "lock.spatial.v1": SPATIAL_LOCK_SCHEMA,      # Nuevo
-    "unlock.spatial.v1": SPATIAL_LOCK_SCHEMA     # Nuevo
+    "lock.spatial.v1": SPATIAL_LOCK_SCHEMA,      
+    "unlock.spatial.v1": SPATIAL_LOCK_SCHEMA     
 }
 
 
