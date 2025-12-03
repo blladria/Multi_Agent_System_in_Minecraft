@@ -60,6 +60,10 @@ class MinerBot(BaseAgent):
         # NEW: Almacena la altura Y fija del marcador visual en superficie
         self.surface_marker_y = 66 
         
+        # Contador para limitar la publicación de inventario
+        self.inventory_publish_counter = 0 
+        self.publish_frequency = 5 # Publicar inventario cada 5 pasos de minería
+        
         # Estrategias Disponibles: DESCUBRIMIENTO DINÁMICO (Reflection)
         self.strategy_classes: Dict[str, Type[BaseMiningStrategy]] = AgentDiscovery.discover_strategies()
         
@@ -82,11 +86,12 @@ class MinerBot(BaseAgent):
         if not self.requirements: return False
         return all(self.inventory.get(mat, 0) >= qty for mat, qty in self.requirements.items())
 
-    # --- LÓGICA DE EXTRACCIÓN FÍSICA (No modificada) ---
+    # --- LÓGICA DE EXTRACCIÓN FÍSICA (OPTIMIZADA) ---
     
     async def _mine_current_block(self, position: Vec3) -> bool:
         """
         Rompe el bloque en la posición dada y actualiza el inventario si es necesario.
+        Genera un mensaje de chat sobre el material recolectado.
         """
         x, y, z = int(position.x), int(position.y), int(position.z)
         
@@ -134,13 +139,19 @@ class MinerBot(BaseAgent):
             if material_to_count:
                 self.inventory[material_to_count] += 1
                 req = self.requirements[material_to_count]
+                
+                # --- MEJORA DE DECLARACIÓN DE RECOLECCIÓN ---
                 self.logger.info(f"MINADO: {material_to_count} ({self.inventory[material_to_count]}/{req})")
+                
+                # Feedback instantáneo al jugador sobre el material
+                self.mc.postToChat(f"[Miner] +1 {material_to_count.upper()} en ({x},{y},{z}). Progreso: {self.inventory[material_to_count]}/{req}.")
+                # --------------------------------------------
             
             return True
         except: return False
 
 
-    # --- CICLO DE VIDA ---
+    # --- CICLO DE VIDA (No modificado, solo copiado por completitud) ---
 
     async def perceive(self):
         if self.broker.has_messages(self.agent_id):
@@ -155,15 +166,12 @@ class MinerBot(BaseAgent):
             else:
                  await self._select_adaptive_strategy()
                  
-                 # Lógica de Locking: Antes de adquirir el lock, comprueba que el sector no esté bloqueado.
                  current_sector_id = self._calculate_sector_id(self.mining_position)
                  if current_sector_id in self.remote_locks:
                      self.logger.warning(f"Sector {current_sector_id} bloqueado por {self.remote_locks[current_sector_id]}. Reubicando...")
                      
-                     # FORZAR REUBICACIÓN a un sector adyacente (X+SECTOR_SIZE)
                      self.mining_position.x += self.SECTOR_SIZE
                      
-                     # Recalcular la Y de la superficie
                      try:
                          self.mining_position.y = self.mc.getHeight(self.mining_position.x, self.mining_position.z) + 1
                          self.surface_marker_y = self.mining_position.y
@@ -172,23 +180,20 @@ class MinerBot(BaseAgent):
                          self.surface_marker_y = 66
                      
                      self.logger.info(f"Nueva posición de minería: ({int(self.mining_position.x)}, {int(self.mining_position.y)}, {int(self.mining_position.z)})")
-                     await asyncio.sleep(0.5) # Pausa para evitar bucle de reubicación inmediato
-                     return # Re-evaluaremos en el siguiente ciclo
+                     await asyncio.sleep(0.5) 
+                     return 
                  
                  
                  if not self.mining_sector_locked:
-                    # Nuevo: Adquirir el lock y notificar
                     await self._acquire_lock()
                     
     async def act(self):
         if self.state == AgentState.RUNNING and self.mining_sector_locked:
             
-            # 1. FIX VISUALIZACIÓN: Marcador siempre en la posición de superficie *fija*
+            # 1. VISUALIZACIÓN: Marcador siempre en la posición de superficie *fija*
             try:
                  x, z = int(self.mining_position.x), int(self.mining_position.z)
-                 # Usamos la altura fija self.surface_marker_y
                  y_surf = self.surface_marker_y 
-                 # Pintamos el marcador en la superficie
                  self._update_marker(Vec3(x, y_surf, z))
             except: pass
             
@@ -200,14 +205,16 @@ class MinerBot(BaseAgent):
                 mine_block_callback=self._mine_current_block 
             )
             
-            # 3. Publicar progreso
-            await self._publish_inventory_update(status="PENDING")
+            # 3. Publicar progreso (REDUCIDO)
+            self.inventory_publish_counter += 1
+            if self.inventory_publish_counter >= self.publish_frequency:
+                 await self._publish_inventory_update(status="PENDING")
+                 self.inventory_publish_counter = 0 # Reiniciar contador
             
-    # --- UTILS DE LOCKING ---
+    # --- UTILS DE LOCKING (No modificado, solo copiado por completitud) ---
     
     def _calculate_sector_id(self, pos: Vec3) -> str:
         """Calcula el ID del sector basado en la posición (ej: 10_10 para 10-19 en X y Z)."""
-        # Redondea hacia abajo al múltiplo más cercano del tamaño del sector
         x_sector = int(pos.x // self.SECTOR_SIZE) * self.SECTOR_SIZE
         z_sector = int(pos.z // self.SECTOR_SIZE) * self.SECTOR_SIZE
         return f"{x_sector}_{z_sector}"
@@ -217,7 +224,6 @@ class MinerBot(BaseAgent):
         self.mining_sector_locked = True
         self.locked_sector_id = self._calculate_sector_id(self.mining_position)
         
-        # Publicar el mensaje de bloqueo
         await self._publish_lock_update(message_type="lock.spatial.v1")
         self.logger.info(f"Lock adquirido: Sector {self.locked_sector_id}")
 
@@ -227,9 +233,6 @@ class MinerBot(BaseAgent):
         Libera el lock localmente y notifica al sistema. (Llamado al entrar en STOPPED/ERROR).
         """
         if self.mining_sector_locked:
-            # Llama a la lógica de notificación asíncrona (no bloqueante)
-            # Como este método se llama desde el setter de 'state' (no asíncrono),
-            # usamos asyncio.create_task para ejecutar la publicación.
             asyncio.create_task(self._publish_lock_update(message_type="unlock.spatial.v1"))
             
             self.mining_sector_locked = False
@@ -245,7 +248,7 @@ class MinerBot(BaseAgent):
         lock_message = {
             "type": message_type,
             "source": self.agent_id,
-            "target": "All", # Broadcast para que todos los MinerBots lo vean
+            "target": "All", 
             "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "payload": {
                 "sector_id": sector_id,
@@ -262,18 +265,15 @@ class MinerBot(BaseAgent):
 
     async def _complete_mining_cycle(self):
         await self._publish_inventory_update(status="SUCCESS")
-        # Nuevo: Liberar el lock al completar el ciclo
         self.release_locks()
         self._mining_offset += 1 
         self.logger.info("Ciclo minería completado.")
-        # --- MEJORA DE FEEDBACK ---
-        self.mc.postToChat(f"[Miner] ⛏️ Ciclo de minería completado. Requisitos cubiertos.")
-        # --- FIN MEJORA ---
+        self.mc.postToChat(f"[Miner]  Ciclo de minería completado. Requisitos cubiertos.")
     
-    # --- MÉTODO PARA REINICIAR LA TAREA (FIX RE-EJECUCIÓN) ---
+    # --- MÉTODOS DE MANEJO DE ESTADO Y COMANDOS ---
+
     def _reset_mining_task(self):
         """Reinicia el inventario y requisitos para una nueva tarea manual."""
-        # FIX: Asegurar que el lock se libera en el sistema al resetear
         if self.mining_sector_locked:
             self.release_locks() 
             
@@ -283,13 +283,12 @@ class MinerBot(BaseAgent):
         self.state = AgentState.IDLE
         self.mining_sector_locked = False
         self.locked_sector_id = ""
+        self.inventory_publish_counter = 0 # Resetear contador de publicación
         # Forzar la recreación de la instancia de la estrategia
-        # Utiliza la clase descubierta dinámicamente o el fallback seguro
         NewStrategy = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
         self.current_strategy_instance = NewStrategy(self.mc, self.logger)
 
         self.logger.info("Tarea de minería reseteada para nueva ejecución.")
-    # -----------------------------------------------------------
 
     async def _handle_message(self, message: Dict[str, Any]):
         msg_type = message.get("type")
@@ -299,25 +298,16 @@ class MinerBot(BaseAgent):
             command = payload.get("command_name")
             if command in ['start', 'fulfill']:
                 
-                # --- FIX RE-EJECUCIÓN: Resetear tarea al recibir start/fulfill ---
                 self._reset_mining_task()
-                
                 self._parse_start_params(payload.get("parameters", {}))
                 
-                # --- FIX REQUISITO POR DEFECTO ---
                 if command == 'start' and not self.requirements:
-                    # Tarea por defecto: minar 100 de Cobblestone
                     self.requirements = {"cobblestone": 100} 
                     self.logger.info("Iniciando minería manual con tarea por defecto: 100 Cobblestone.")
                 
-                # --- MEJORA DE FEEDBACK (start/fulfill) ---
                 target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
                 req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
-                
                 self.mc.postToChat(f"[Miner] ⛏️ Minería iniciada en {target_pos}. Objetivo: {req_str}. Estrategia: {self.current_strategy_name.upper()}.")
-                # --- FIN MEJORA ---
-                
-                # ------------------------------------
                 
                 await self._select_adaptive_strategy() 
                 if not self._check_requirements_fulfilled():
@@ -326,11 +316,9 @@ class MinerBot(BaseAgent):
             elif command == 'set': 
                 self._parse_set_strategy(payload.get("parameters", {}))
                 
-                # --- MEJORA DE FEEDBACK (set strategy) ---
                 if self.current_strategy_name in self.strategy_classes:
                     self.logger.info(f"Comando 'set strategy' recibido. Estrategia cambiada a: {self.current_strategy_name}.")
                     self.mc.postToChat(f"[Miner]  Estrategia cambiada a: {self.current_strategy_name.upper()}.")
-                # --- FIN MEJORA ---
 
             elif command == 'pause':
                 self.handle_pause()
@@ -353,36 +341,26 @@ class MinerBot(BaseAgent):
 
             
         elif msg_type == "materials.requirements.v1":
-            # ... (Lógica de requisitos)
             self.requirements = payload.copy()
             self.logger.info(f"Nuevos requisitos recibidos: {self.requirements}")
             
-            # FIX CRÍTICO: Resetear el inventario para forzar la minería.
             self.inventory = {mat: 0 for mat in MATERIAL_MAP.keys()}
             
-            # Reposicionar minero según zona de construcción + offset
             ctx_zone = message.get("context", {}).get("target_zone")
             if ctx_zone:
                  bx, bz = int(ctx_zone['x']), int(ctx_zone['z'])
-                 # El offset asegura que el minero se va a otro sector, lejos del BuilderBot
-                 # Hacemos el offset 3 sectores (30 bloques) lejos del constructor
                  offset_magnitude = 3 * self.SECTOR_SIZE
                  
                  self.mining_position.x = bx + offset_magnitude
                  self.mining_position.z = bz + offset_magnitude
                  
-                 # --- NEW FIX: Set the initial mining and marker height once ---
                  try:
-                     # Posiciona en la superficie + 1 para empezar a picar abajo
                      self.mining_position.y = self.mc.getHeight(self.mining_position.x, self.mining_position.z) + 1
-                     # CACHE la altura del marcador en superficie
                      self.surface_marker_y = self.mining_position.y
                  except Exception:
                      self.mining_position.y = 65
                      self.surface_marker_y = 66
-                 # ----------------------------------------------------------------
                  
-                 # Reiniciar la instancia de estrategia
                  NewStrategy = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
                  self.current_strategy_instance = NewStrategy(self.mc, self.logger)
 
@@ -394,7 +372,6 @@ class MinerBot(BaseAgent):
                 self.state = AgentState.RUNNING
 
         elif msg_type == "lock.spatial.v1":
-            # Nuevo: Escuchar si OTROS MinerBots bloquean un sector
             sector_id = payload.get("sector_id")
             source = message.get("source")
             
@@ -403,7 +380,6 @@ class MinerBot(BaseAgent):
                 self.logger.warning(f"Sector {sector_id} BLOQUEADO por {source}. Agregado a lista remota.")
         
         elif msg_type == "unlock.spatial.v1":
-             # Nuevo: Escuchar si OTROS MinerBots liberan un sector
              sector_id = payload.get("sector_id")
              source = message.get("source")
              if source != self.agent_id and sector_id in self.remote_locks:
@@ -428,7 +404,6 @@ class MinerBot(BaseAgent):
         self.mining_position.x = nx
         self.mining_position.z = nz
 
-        # --- FIX: Usar ny si fue proporcionado, sino usar getHeight ---
         if ny is not None:
              self.mining_position.y = ny
              self.surface_marker_y = ny 
@@ -439,42 +414,37 @@ class MinerBot(BaseAgent):
             except: 
                  self.mining_position.y = 65
                  self.surface_marker_y = 66
-        # ----------------------------------------------------------------
 
     def _parse_set_strategy(self, params: Dict[str, Any]):
         args = params.get('args', [])
         if len(args) >= 2 and args[0] == 'strategy':
             strat = args[1].lower()
             if strat in self.strategy_classes:
-                # Recrear la instancia para resetear su estado interno
                 NewStrategy = self.strategy_classes[strat]
                 self.current_strategy_instance = NewStrategy(self.mc, self.logger)
                 self.current_strategy_name = strat
                 self.logger.info(f"Estrategia manual: {strat}")
 
     async def _select_adaptive_strategy(self):
-        """Elige la mejor estrategia según lo que falte."""
         if not self.requirements: return 
 
         pending = {m: q - self.inventory.get(m, 0) for m, q in self.requirements.items() if q > self.inventory.get(m, 0)}
         if not pending: return 
 
         most_needed = max(pending, key=pending.get)
-        new_strat = "vertical" # Default
+        new_strat = "vertical" 
 
         vein_mats = ("diamond_ore", "iron_ore", "gold_ore", "coal_ore", "redstone_ore")
         
-        # Reglas de Selección:
         if pending.get("dirt", 0) > 0 or pending.get("sand", 0) > 0:
-            new_strat = "grid" # Superficie para tierra/arena
+            new_strat = "grid" 
         elif most_needed in vein_mats:
-            new_strat = "vein" # Vetas para minerales valiosos
+            new_strat = "vein" 
         elif most_needed in ("cobblestone", "stone", "sandstone", "gravel"):
-            new_strat = "vertical" # Vertical para materiales masivos profundos
+            new_strat = "vertical" 
             
         if new_strat != self.current_strategy_name:
             self.current_strategy_name = new_strat
-            # Recrear la instancia al cambiar de estrategia
             NewStrategy = self.strategy_classes.get(new_strat, VerticalSearchStrategy)
             self.current_strategy_instance = NewStrategy(self.mc, self.logger)
             self.logger.info(f"Estrategia cambiada a: {new_strat} (Objetivo: {most_needed})")
@@ -494,19 +464,33 @@ class MinerBot(BaseAgent):
         await self.broker.publish(msg)
 
     async def _publish_status(self):
-        # Muestra el estado actual, inventario y estrategia
+        # Filtrar solo los materiales con cantidad pendiente > 0
+        pending_materials = {m: q - self.inventory.get(m, 0) for m, q in self.requirements.items() if q > self.inventory.get(m, 0)}
+        
+        # 1. Requisitos Pendientes
+        if pending_materials:
+            req_str_parts = [f"{self.inventory.get(m, 0)}/{q} {m}" for m, q in self.requirements.items() if q > 0]
+            req_str = ", ".join(req_str_parts)
+        else:
+            req_str = "Completado"
+
+        # 2. Inventario Actual
         inv_str = ", ".join([f"{q} {m}" for m, q in self.inventory.items() if q > 0])
-        req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
+        
+        # 3. Posición y Bloqueo
         lock_status = f"LOCKED (Sector: {self.locked_sector_id})" if self.mining_sector_locked else "UNLOCKED"
         remote_str = f"| Remoto: {len(self.remote_locks)} locks" if self.remote_locks else ""
+        mining_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.y)}, {int(self.mining_position.z)})"
         
+        # --- MEJORA DE DECLARACIÓN DE ESTADO ---
         status_message = (
-            f"[{self.agent_id}] Estado: {self.state.name} | "
-            f"Estrategia: {self.current_strategy_name.upper()} | "
-            f"Lock: {lock_status}{remote_str} | "
-            f"Inv: {inv_str if inv_str else 'Vacío'} | "
-            f"Req: {req_str if req_str else 'Ninguno'}"
+            f"[{self.agent_id}]  Estado: {self.state.name} | Estrategia: {self.current_strategy_name.upper()} | "
+            f"Pos: {mining_pos} | Lock: {lock_status}{remote_str}\n"
+            f"  > Progreso (Rec./Req.): {req_str if req_str_parts else 'Ninguno'}\n"
+            f"  > Inventario Total: {inv_str if inv_str else 'Vacío'}"
         )
+        # ----------------------------------------
+        
         self.logger.info(f"Comando 'status' recibido. Reportando: {self.state.name}")
         try: self.mc.postToChat(status_message)
         except: pass
