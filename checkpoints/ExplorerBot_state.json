@@ -1,14 +1,14 @@
 {
-    "state": "IDLE",
+    "state": "RUNNING",
     "marker_position": [
-        202,
+        188,
         70,
-        56
+        32
     ],
     "context": {
         "target_zone": {
-            "x": 189,
-            "z": 43
+            "x": 183,
+            "z": 29
         }
     }
 }

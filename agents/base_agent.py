@@ -16,9 +16,10 @@ from functools import wraps # Importación para el decorador
 # La configuración de logging se gestiona de forma centralizada en main.py
 
 # --- DECORADOR DE PROGRAMACIÓN FUNCIONAL (Requisito 175) ---
-def log_execution_time(logger_instance, method_name):
+def log_execution_time(method_name):
     """
     Decorador que mide y loguea el tiempo de ejecución de una corrutina.
+    Accede al logger del agente (`self.logger`) en tiempo de ejecución.
     """
     def decorator(func):
         @wraps(func)
@@ -30,9 +31,12 @@ def log_execution_time(logger_instance, method_name):
             finally:
                 end_time = time.perf_counter()
                 elapsed = (end_time - start_time) * 1000 # en milisegundos
-                logger_instance.debug(
-                    f"FUNCTIONAL: {self.agent_id}.{method_name} ejecutado en {elapsed:.2f}ms"
-                )
+                
+                # Accedemos a self.logger, que existe en la instancia 'self'
+                if hasattr(self, 'logger'):
+                    self.logger.debug(
+                        f"FUNCTIONAL: {self.agent_id}.{method_name} ejecutado en {elapsed:.2f}ms"
+                    )
         return wrapper
     return decorator
 # -------------------------------------------------------------
@@ -147,53 +151,64 @@ class BaseAgent(ABC):
     # --- Métodos del Ciclo Perceive-Decide-Act (PDP) ---
 
     @abstractmethod
-    @log_execution_time(logging.getLogger(f"Agent.{{agent_id}}"), "perceive")
+    @log_execution_time("perceive")
     async def perceive(self):
         """Observa el entorno y procesa mensajes."""
         pass
 
     @abstractmethod
-    @log_execution_time(logging.getLogger(f"Agent.{{agent_id}}"), "decide")
+    @log_execution_time("decide")
     async def decide(self):
         """Determina la siguiente acción."""
         pass
 
     @abstractmethod
-    @log_execution_time(logging.getLogger(f"Agent.{{agent_id}}"), "act")
+    @log_execution_time("act")
     async def act(self):
         """Ejecuta la acción."""
         pass
     
-    # --- Bucle de Ejecución Concurrente (CORREGIDO PARA PAUSA) ---
+    # --- Bucle de Ejecución Concurrente (CRITICAL FIX) ---
 
     async def run_cycle(self):
         """
-        Bucle principal. NO SE BLOQUEA EN PAUSA, solo salta decide/act.
-        Esto permite recibir el comando RESUME o STOP mientras está pausado.
+        Bucle principal. Modificado para que el Task de asyncio NO termine
+        al entrar en estado STOPPED, permitiendo que el agente siga percibiendo
+        comandos de estado o RESUME. El Task solo termina en ERROR o por 
+        cancelación externa del AgentManager.
         """
-        # Intentar cargar el estado (ej: si venimos de un STOP anterior)
-        # El estado inicial se establece en __init__, lo mantenemos así.
-        
         self.logger.info("Ciclo de ejecución iniciado.")
 
-        # El bucle se mantiene vivo mientras no sea un estado terminal
-        while self.state not in (AgentState.STOPPED, AgentState.ERROR):
+        # Modificación CRÍTICA: Bucle infinito (True) para mantener el Task vivo.
+        # Esto permite que el agente siga percibiendo comandos como 'status' o 'resume'
+        # incluso cuando está en estado STOPPED. El AgentManager es quien debe cancelar
+        # la tarea para una parada total del sistema.
+        while True:
             try:
-                # 1. PERCEIVE: Siempre se ejecuta para leer mensajes (Start, Pause, Resume, Stop)
+                # 1. PERCEIVE: Siempre se ejecuta para leer mensajes (Status, Stop, Resume, etc.)
                 await self.perceive()
 
                 # 2. DECIDE & ACT: Solo se ejecutan si el agente está trabajando activamente
                 if self.state == AgentState.RUNNING: 
                     await self.decide()
-                    # Si act es muy largo (como ExplorerBot), debe usar await sleep para no bloquear
                     await self.act() 
                 
+                # 3. Terminación inmediata si el estado es ERROR
+                if self.state == AgentState.ERROR:
+                    self.logger.error(f"Estado de ERROR. Finalizando tarea.")
+                    break
+
                 # Pausa para no saturar la CPU. CRÍTICO para el procesamiento de mensajes.
                 await asyncio.sleep(0.1) 
 
+            except asyncio.CancelledError:
+                # El AgentManager ha solicitado la terminación limpia.
+                self.logger.info("Tarea cancelada por el Manager. Terminando ciclo.")
+                self.state = AgentState.STOPPED # Asegurar el estado final
+                break
             except Exception as e:
                 self.logger.error(f"Error fatal en el ciclo: {e}", exc_info=True)
-                self.state = AgentState.ERROR
+                self.state = AgentState.ERROR # Esto forzará la liberación de locks
                 break
 
         self.logger.info(f"Ciclo de ejecución terminado ({self.state.name}).")
@@ -222,7 +237,7 @@ class BaseAgent(ABC):
         # Stop es prioritario, funciona desde cualquier estado
         self._save_checkpoint()
         self.state = AgentState.STOPPED 
-        # self.mc.postToChat(f"[{self.agent_id}] DETENIDO (Fin del proceso).") # El Manager hace el postToChat
+        # NOTA: La liberación de locks se llama en el setter de 'state'
         self.logger.info(f"{self.agent_id} deteniendo operaciones.")
 
     # --- Métodos de Checkpointing y Sincronización (Implementación de Serialización) ---
@@ -259,7 +274,6 @@ class BaseAgent(ABC):
             # 1. Restaurar el estado y el contexto
             loaded_state_name = state_loaded.get("state", "IDLE")
             
-            # --- FIX CRÍTICO APLICADO AQUÍ ---
             # Si el estado cargado NO es un estado terminal (STOPPED/ERROR), 
             # lo reseteamos a IDLE para evitar ejecuciones automáticas al reiniciar el Manager.
             if loaded_state_name not in ["STOPPED", "ERROR"]:
@@ -268,7 +282,6 @@ class BaseAgent(ABC):
             else:
                  self._state = AgentState[loaded_state_name]
                  self.logger.info(f"Checkpoint cargado. Estado: {self._state.name}")
-            # ----------------------------------
 
             self.context = state_loaded.get("context", {})
 
@@ -276,9 +289,6 @@ class BaseAgent(ABC):
             mx, my, mz = state_loaded.get("marker_position", (0, 70, 0))
             self.marker_position = Vec3(mx, my, mz)
 
-            # Limpiamos el archivo después de cargarlo para que el próximo inicio sea limpio, 
-            # a menos que se quiera persistir el estado entre ejecuciones.
-            
         except Exception as e:
             self.logger.error(f"Error al cargar checkpoint: {e}. Reiniciando estado a IDLE.")
             self._state = AgentState.IDLE
