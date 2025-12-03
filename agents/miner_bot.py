@@ -1,4 +1,4 @@
-# blladria/multi_agent_system_in_minecraft/Multi_Agent_System_in_Minecraft-2b46a76b32b7996f3f518191e42414e3e4417aa5/agents/miner_bot.py
+# blladria/multi_agent_system_in_minecraft/Multi_Agent_System_in_Minecraft-e8c043b520b95fd1c22ced737cbe22980375ecac/agents/miner_bot.py
 
 # -*- coding: utf-8 -*-
 import asyncio
@@ -294,7 +294,6 @@ class MinerBot(BaseAgent):
         Reinicia el inventario y estado para una nueva tarea manual.
         Si reset_requirements es False, MANTIENE los requisitos cargados (para 'fulfill').
         """
-        # Debe llamarse release_locks antes de cualquier reset de estado.
         if self.mining_sector_locked:
             self.release_locks() 
             
@@ -308,10 +307,13 @@ class MinerBot(BaseAgent):
         self.locked_sector_id = ""
         self.inventory_publish_counter = 0 # Resetear contador de publicación
         
-        # Forzar la recreación de la instancia de la estrategia
-        # Esto es necesario para que la estrategia interna se reinicie (ej. un contador de intentos)
-        NewStrategy = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
-        self.current_strategy_instance = NewStrategy(self.mc, self.logger)
+        # FIX/MEJORA: Forzar la recreación de la instancia de la estrategia
+        # para borrar cualquier estado interno (ej: contadores de GridSearch/VerticalSearch).
+        # CRÍTICO: La instancia se recrea aquí basándose en self.current_strategy_name.
+        # En el caso de 'start', la lógica posterior en _handle_message sobrescribirá esto
+        # si se necesita 'grid'. Esto garantiza que la instancia actual esté limpia.
+        StrategyClass = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
+        self.current_strategy_instance = StrategyClass(self.mc, self.logger)
 
         self.logger.info("Tarea de mineria reseteada para nueva ejecucion.")
 
@@ -324,10 +326,11 @@ class MinerBot(BaseAgent):
             command = payload.get("command_name")
             
             if command == 'fulfill':
-                 # FIX CRÍTICO: Pausa más larga para asegurar que el mensaje 'materials.requirements.v1'
+                 # FIX CRÍTICO: Pausa para asegurar que el mensaje 'materials.requirements.v1'
                  # (enviado por BuilderBot con /builder bom) haya sido procesado por el 
                  # ciclo 'perceive' antes de que el comando actúe sobre los requisitos cargados.
-                 await asyncio.sleep(1.0) # Aumentado a 1.0s para mayor robustez
+                 # El problema de race condition se mitiga con esta pausa.
+                 await asyncio.sleep(0.5) 
 
                  # *** RESTRICCIÓN: Solo si self.requirements NO está vacío ***
                  if not self.requirements:
@@ -344,7 +347,7 @@ class MinerBot(BaseAgent):
                  target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
                  self.mc.postToChat(f"[Miner] Tarea: Recolectar BOM de BuilderBot. Requisitos: {req_str}. Estrategia: {self.current_strategy_name.upper()}. Iniciando en {target_pos}.")
                  
-                 # Forzar la reevaluación inmediata de estrategia
+                 # Forzar la reevaluación inmediata
                  await self._select_adaptive_strategy()
                  if not self._check_requirements_fulfilled():
                      self.state = AgentState.RUNNING
@@ -356,17 +359,30 @@ class MinerBot(BaseAgent):
                 self._parse_start_params(params)
                 
                 if not self.requirements:
-                    # TAREA POR DEFECTO: 40 Dirt y 40 Cobblestone (para forzar flujo Grid -> Vertical)
+                    # TAREA POR DEFECTO: 40 Dirt y 40 Cobblestone
                     self.requirements = {"dirt": 40, "cobblestone": 40} 
                     self.logger.info("Iniciando mineria manual con tarea por defecto: 40 Dirt y 40 Cobblestone.")
-                    
+                
+                # --- FIX CRÍTICO PARA FORZAR FLUJO GRID -> VERTICAL ---
+                # Si se necesita tierra/arena, aseguramos que la estrategia sea 'grid' antes de la re-evaluación adaptativa,
+                # para que _reset_mining_task (que ya se ejecutó) no haya fijado un VerticalSearch anterior.
+                pending_dirt_or_sand = self.requirements.get("dirt", 0) > 0 or self.requirements.get("sand", 0) > 0
+                if self.requirements and pending_dirt_or_sand:
+                     self.current_strategy_name = 'grid'
+                     # Re-instanciar la estrategia con el nombre 'grid' para que el MinerBot 
+                     # entre en el ciclo con la instancia de GridSearch limpia.
+                     StrategyClass = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
+                     self.current_strategy_instance = StrategyClass(self.mc, self.logger)
+                # --------------------------------------------------------
                 
                 target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
                 req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
                 
                 # Forzar la reevaluación inmediata
                 if self.requirements:
-                    await self._select_adaptive_strategy() # Esto seleccionará 'grid' si hay dirt
+                    # _select_adaptive_strategy es clave para manejar la transición de 'grid' a 'vertical'
+                    # y para confirmar la selección después de la anulación forzada anterior.
+                    await self._select_adaptive_strategy() 
                     
                     # Mensaje al jugador reflejando la estrategia seleccionada adaptativamente
                     strat_name = self.current_strategy_name.upper()
@@ -378,23 +394,20 @@ class MinerBot(BaseAgent):
                     
             elif command == 'set': 
                 old_strategy_name = self.current_strategy_name
-                
                 # El cambio de estrategia es instantáneo al re-instanciar self.current_strategy_instance
-                # Esto es manejado por _parse_set_strategy (cambia nombre e instancia)
                 self._parse_set_strategy(params)
                 
                 if self.current_strategy_name in self.strategy_classes:
-                    # NUEVA FUNCIONALIDAD: Mensaje de confirmación
+                    # Mensaje de confirmación
                     self.mc.postToChat(f"[Miner] Estrategia cambiada de {old_strategy_name.upper()} a: {self.current_strategy_name.upper()}.")
                     
                     # FIX: Forzar un reinicio de tarea si estaba corriendo Y LA ESTRATEGIA CAMBIÓ REALMENTE
                     if self.state == AgentState.RUNNING and old_strategy_name != self.current_strategy_name:
                          # Reiniciar la tarea de minería, manteniendo los requisitos cargados (reset_requirements=False)
-                         # Esto asegura que la nueva estrategia empiece desde cero y los locks se re-adquieran
                          self._reset_mining_task(reset_requirements=False) 
                          self.state = AgentState.RUNNING # Aseguramos que vuelva a RUNNING inmediatamente
                          self.logger.info("Tarea de minería reiniciada para aplicar la nueva estrategia.")
-                    
+
             elif command == 'pause':
                 self.handle_pause()
                 self.logger.info(f"Comando 'pause' recibido. Estado: PAUSED.")
@@ -427,10 +440,8 @@ class MinerBot(BaseAgent):
             
             # --- LÓGICA DE INICIO: Solo iniciar si el status es PENDING ---
             if message.get("status") == "PENDING":
-                # Lógica de reubicación y inicio (automático)
                 ctx_zone = message.get("context", {}).get("target_zone")
                 if ctx_zone:
-                    # ... (Lógica de reubicación ya existente)
                     bx, bz = int(ctx_zone['x']), int(ctx_zone['z'])
                     offset_magnitude = 3 * self.SECTOR_SIZE
                     
@@ -444,7 +455,6 @@ class MinerBot(BaseAgent):
                         self.mining_position.y = 65
                         self.surface_marker_y = 66
                     
-                    # Forzar una re-instancia para reiniciar el estado interno
                     NewStrategy = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
                     self.current_strategy_instance = NewStrategy(self.mc, self.logger)
 
@@ -455,7 +465,6 @@ class MinerBot(BaseAgent):
                 if self.requirements and self.state not in (AgentState.STOPPED, AgentState.ERROR): 
                     if not self._check_requirements_fulfilled():
                         self.state = AgentState.RUNNING
-                        self.mc.postToChat(f"[Miner] Requisitos de BOM recibidos y PENDING. Iniciando con {self.current_strategy_name.upper()}.")
                     else: 
                         self.state = AgentState.IDLE
                         self.mc.postToChat("[Miner] Requisitos de BOM ya cubiertos. IDLE.")
@@ -483,14 +492,11 @@ class MinerBot(BaseAgent):
     def _parse_start_params(self, params: Dict[str, Any]):
         args = params.get('args', [])
         nx, nz, ny = None, None, None
-        
-        # Bucle para encontrar x, z, y si están definidos
         for a in args:
             if 'x=' in a: nx = int(a.split('=')[1])
             if 'z=' in a: nz = int(a.split('=')[1])
             if 'y=' in a: ny = int(a.split('=')[1])
         
-        # Actualizar posición X y Z
         if nx is None:
             try: 
                 p = self.mc.player.getTilePos()
@@ -500,40 +506,19 @@ class MinerBot(BaseAgent):
         self.mining_position.x = nx
         self.mining_position.z = nz
 
-        # Actualizar posición Y y el marcador de superficie
         if ny is not None:
              self.mining_position.y = ny
              self.surface_marker_y = ny 
         else:
             try: 
-                 # Tomar la altura del terreno + 1
                  self.mining_position.y = self.mc.getHeight(nx, nz) + 1
                  self.surface_marker_y = self.mining_position.y
             except: 
                  self.mining_position.y = 65
                  self.surface_marker_y = 66
-                 
-        # Parsear requisitos adicionales
-        temp_reqs = {}
-        for a in args:
-            if '=' not in a and a.split(' ')[0].isdigit():
-                parts = a.split(' ', 1)
-                try:
-                    quantity = int(parts[0])
-                    material = parts[1].lower()
-                    if material in MATERIAL_MAP:
-                        temp_reqs[material] = quantity
-                except:
-                    pass
-
-        # Si hay requisitos explícitos en el comando, se usan.
-        if temp_reqs:
-             self.requirements = temp_reqs
 
     def _parse_set_strategy(self, params: Dict[str, Any]):
         args = params.get('args', [])
-        
-        # La estructura del comando es 'miner set strategy <nombre_estrategia>'
         if len(args) >= 2 and args[0] == 'strategy':
             strat = args[1].lower()
             if strat in self.strategy_classes:
@@ -542,16 +527,8 @@ class MinerBot(BaseAgent):
                 self.current_strategy_instance = NewStrategy(self.mc, self.logger) 
                 self.current_strategy_name = strat
                 self.logger.info(f"Estrategia manual: {strat}")
-            else:
-                 self.logger.warning(f"Intento de estrategia no válida: {strat}")
-                 # Dejar que _handle_message maneje el feedback de error.
-
 
     async def _select_adaptive_strategy(self):
-        """
-        Selecciona la estrategia de minería basada en los requisitos pendientes.
-        Prioridad: Grid (Dirt) > Vertical (Cobblestone) > Vein (Ores).
-        """
         if not self.requirements: return 
 
         # 1. Calcular materiales pendientes
@@ -560,13 +537,13 @@ class MinerBot(BaseAgent):
 
         new_strat = self.current_strategy_name # Mantener la estrategia actual por defecto
 
-        # --- LÓGICA DE PRIORIDAD ESPECÍFICA (DIRT -> COBBLESTONE) ---
+        # --- LÓGICA DE PRIORIDAD ESPECÍFICA ---
         
-        # 1. PRIORIDAD MÁXIMA: Dirt o Sand (Usar Grid Search en superficie)
+        # 1. PRIORIDAD MÁXIMA: Dirt o Sand (Usar Grid Search)
         if pending.get("dirt", 0) > 0 or pending.get("sand", 0) > 0:
             new_strat = "grid" 
         
-        # 2. SEGUNDA PRIORIDAD: Cobblestone o Stone (Usar Vertical Search profundo)
+        # 2. SEGUNDA PRIORIDAD: Cobblestone o Stone (Usar Vertical Search)
         elif any(pending.get(mat, 0) > 0 for mat in ["cobblestone", "stone"]):
             new_strat = "vertical" 
         
