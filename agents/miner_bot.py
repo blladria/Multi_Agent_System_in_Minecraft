@@ -268,7 +268,7 @@ class MinerBot(BaseAgent):
         self.release_locks()
         self._mining_offset += 1 
         self.logger.info("Ciclo minería completado.")
-        self.mc.postToChat(f"[Miner]  Ciclo de minería completado. Requisitos cubiertos.")
+        self.mc.postToChat(f"[Miner] Ciclo de mineria completado. Requisitos cubiertos.") # Eliminado acento
     
     # --- MÉTODOS DE MANEJO DE ESTADO Y COMANDOS ---
 
@@ -288,7 +288,7 @@ class MinerBot(BaseAgent):
         NewStrategy = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
         self.current_strategy_instance = NewStrategy(self.mc, self.logger)
 
-        self.logger.info("Tarea de minería reseteada para nueva ejecución.")
+        self.logger.info("Tarea de mineria reseteada para nueva ejecucion.") # Eliminado acento
 
     async def _handle_message(self, message: Dict[str, Any]):
         msg_type = message.get("type")
@@ -301,39 +301,70 @@ class MinerBot(BaseAgent):
                 self._reset_mining_task()
                 self._parse_start_params(payload.get("parameters", {}))
                 
-                if command == 'start' and not self.requirements:
-                    self.requirements = {"cobblestone": 100} 
-                    self.logger.info("Iniciando minería manual con tarea por defecto: 100 Cobblestone.")
+                # --- NUEVA LÓGICA EXPLICITA PARA 'start' y 'fulfill' ---
+
+                if command == 'fulfill':
+                    if not self.requirements:
+                        # Caso de error: No hay BOM del Builder
+                        self.logger.warning("Comando 'fulfill' recibido, pero los requisitos (BOM) del Builder estan vacios. Intente usar /builder bom primero.") # Eliminado acento
+                        # Eliminado el emoticono '⚠️' y acentos
+                        self.mc.postToChat("[Miner] Alerta! No hay requisitos del Builder (BOM) cargados. Use /builder bom y luego /miner fulfill.")
+                        return 
+                    
+                    req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
+                    
+                    # LOGGING MEJORADO
+                    self.logger.info(f"Comando 'fulfill' recibido: Leyendo BOM del Builder. Objetivo: {req_str}")
+                    
+                    # CHAT MEJORADO
+                    target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
+                    self.mc.postToChat(f"[Miner] Tarea: Recolectar BOM de BuilderBot. Requisitos: {req_str}. Estrategia: {self.current_strategy_name.upper()}. Iniciando en {target_pos}.")
                 
-                target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
-                req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
-                self.mc.postToChat(f"[Miner]  Minería iniciada en {target_pos}. Objetivo: {req_str}. Estrategia: {self.current_strategy_name.upper()}.")
+                elif command == 'start' and not self.requirements:
+                    # TAREA POR DEFECTO para 'start' sin parámetros de requisitos
+                    self.requirements = {"dirt": 40, "cobblestone": 40} 
+                    self.logger.info("Iniciando mineria manual con tarea por defecto: 40 Dirt y 40 Cobblestone.") # Eliminado acento
+                    
+                    target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
+                    req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
+                    self.mc.postToChat(f"[Miner] Mineria manual iniciada. Objetivo: {req_str}. Estrategia: {self.current_strategy_name.upper()}.") # Eliminado acento
                 
-                await self._select_adaptive_strategy() 
-                if not self._check_requirements_fulfilled():
-                    self.state = AgentState.RUNNING
-                else: self.state = AgentState.IDLE
+                elif command == 'start':
+                     # TAREA para 'start' con parámetros de posición y/o requisitos ya seteados
+                    target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
+                    req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
+                    self.mc.postToChat(f"[Miner] Mineria re-iniciada. Objetivo: {req_str}. Estrategia: {self.current_strategy_name.upper()}.") # Eliminado acento
+
+
+                # Si hay requisitos establecidos (por 'fulfill', 'start' por defecto o 'start' con requisitos), iniciar el ciclo.
+                if self.requirements:
+                    await self._select_adaptive_strategy() 
+                    if not self._check_requirements_fulfilled():
+                        self.state = AgentState.RUNNING
+                    else: self.state = AgentState.IDLE
+                # --- FIN NUEVA LÓGICA ---
+
             elif command == 'set': 
                 self._parse_set_strategy(payload.get("parameters", {}))
                 
                 if self.current_strategy_name in self.strategy_classes:
                     self.logger.info(f"Comando 'set strategy' recibido. Estrategia cambiada a: {self.current_strategy_name}.")
-                    self.mc.postToChat(f"[Miner]  Estrategia cambiada a: {self.current_strategy_name.upper()}.")
+                    self.mc.postToChat(f"[Miner] Estrategia cambiada a: {self.current_strategy_name.upper()}.")
 
             elif command == 'pause':
                 self.handle_pause()
                 self.logger.info(f"Comando 'pause' recibido. Estado: PAUSED.")
-                self.mc.postToChat(f"[Miner]  Pausado. Estado: PAUSED.")
+                self.mc.postToChat(f"[Miner] Pausado. Estado: PAUSED.")
                 
             elif command == 'resume':
                 self.handle_resume()
                 self.logger.info(f"Comando 'resume' recibido. Estado: RUNNING.")
-                self.mc.postToChat(f"[Miner]  Reanudado. Estado: RUNNING.")
+                self.mc.postToChat(f"[Miner] Reanudado. Estado: RUNNING.")
 
             elif command == 'stop':
                 self.handle_stop()
-                self.logger.info(f"Comando 'stop' recibido. Minería detenida y locks liberados.")
-                self.mc.postToChat(f"[Miner]  Detenido. Locks liberados. Estado: STOPPED.")
+                self.logger.info(f"Comando 'stop' recibido. Mineria detenida y locks liberados.") # Eliminado acento
+                self.mc.postToChat(f"[Miner] Detenido. Locks liberados. Estado: STOPPED.")
                 self._clear_marker()
 
             elif command == 'status':
@@ -428,26 +459,40 @@ class MinerBot(BaseAgent):
     async def _select_adaptive_strategy(self):
         if not self.requirements: return 
 
+        # 1. Calcular materiales pendientes
         pending = {m: q - self.inventory.get(m, 0) for m, q in self.requirements.items() if q > self.inventory.get(m, 0)}
         if not pending: return 
 
-        most_needed = max(pending, key=pending.get)
-        new_strat = "vertical" 
+        new_strat = self.current_strategy_name # Mantener la estrategia actual por defecto
 
-        vein_mats = ("diamond_ore", "iron_ore", "gold_ore", "coal_ore", "redstone_ore")
+        # --- LÓGICA DE PRIORIDAD ESPECÍFICA ---
         
+        # 1. PRIORIDAD MÁXIMA: Dirt o Sand (Usar Grid Search)
+        # Esto asegura que Grid se usa primero si se necesita tierra.
         if pending.get("dirt", 0) > 0 or pending.get("sand", 0) > 0:
             new_strat = "grid" 
-        elif most_needed in vein_mats:
-            new_strat = "vein" 
-        elif most_needed in ("cobblestone", "stone", "sandstone", "gravel"):
+        
+        # 2. SEGUNDA PRIORIDAD: Cobblestone o Stone (Usar Vertical Search)
+        # Solo se verifica si la prioridad 1 está cubierta.
+        elif any(pending.get(mat, 0) > 0 for mat in ["cobblestone", "stone"]):
             new_strat = "vertical" 
-            
+        
+        # 3. TERCERA PRIORIDAD: ORES (Usar Vein Search)
+        elif any(pending.get(mat, 0) > 0 for mat in ["diamond_ore", "iron_ore", "gold_ore", "coal_ore", "redstone_ore"]):
+            new_strat = "vein"
+        
+        # 4. Fallback para otros
+        elif any(pending.get(mat, 0) > 0 for mat in ["wood", "wood_planks", "glass", "glass_pane", "sandstone", "gravel"]):
+            new_strat = "vertical" 
+
+        # --- FIN LÓGICA DE PRIORIDAD ESPECÍFICA ---
+
+
         if new_strat != self.current_strategy_name:
             self.current_strategy_name = new_strat
             NewStrategy = self.strategy_classes.get(new_strat, VerticalSearchStrategy)
             self.current_strategy_instance = NewStrategy(self.mc, self.logger)
-            self.logger.info(f"Estrategia cambiada a: {new_strat} (Objetivo: {most_needed})")
+            self.logger.info(f"Estrategia adaptativa cambiada a: {new_strat} (Por prioridad de materiales)")
 
     async def _publish_inventory_update(self, status: str):
         msg = {
@@ -467,6 +512,9 @@ class MinerBot(BaseAgent):
         # Filtrar solo los materiales con cantidad pendiente > 0
         pending_materials = {m: q - self.inventory.get(m, 0) for m, q in self.requirements.items() if q > self.inventory.get(m, 0)}
         
+        # Inicialización crítica para evitar UnboundLocalError
+        req_str_parts = [] 
+
         # 1. Requisitos Pendientes
         if pending_materials:
             req_str_parts = [f"{self.inventory.get(m, 0)}/{q} {m}" for m, q in self.requirements.items() if q > 0]
@@ -484,10 +532,10 @@ class MinerBot(BaseAgent):
         
         # --- MEJORA DE DECLARACIÓN DE ESTADO ---
         status_message = (
-            f"[{self.agent_id}]  Estado: {self.state.name} | Estrategia: {self.current_strategy_name.upper()} | "
+            f"[{self.agent_id}] Estado: {self.state.name} | Estrategia: {self.current_strategy_name.upper()} | "
             f"Pos: {mining_pos} | Lock: {lock_status}{remote_str}\n"
             f"  > Progreso (Rec./Req.): {req_str if req_str_parts else 'Ninguno'}\n"
-            f"  > Inventario Total: {inv_str if inv_str else 'Vacío'}"
+            f"  > Inventario Total: {inv_str if inv_str else 'Vacio'}"
         )
         # ----------------------------------------
         
