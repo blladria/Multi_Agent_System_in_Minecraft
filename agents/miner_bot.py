@@ -70,6 +70,10 @@ class MinerBot(BaseAgent):
         InitialStrategy = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
         self.current_strategy_instance = InitialStrategy(self.mc, self.logger)
         
+        # --- MODIFICACIÓN: Flag para indicar si el usuario ha forzado una estrategia ---
+        self.manual_strategy_active = False
+        # -----------------------------------------------------------------------------
+        
         self.logger.info(f"MinerBot: Estrategias descubiertas: {list(self.strategy_classes.keys())}. Inicial: {self.current_strategy_name}")
         
         # Marcador Amarillo (Lana Amarilla = data 4)
@@ -327,6 +331,10 @@ class MinerBot(BaseAgent):
                  self._reset_mining_task(reset_requirements=False) 
                  self._parse_start_params(params)
                  
+                 # --- MODIFICACIÓN: Reactivar IA automática al iniciar tarea nueva ---
+                 self.manual_strategy_active = False 
+                 # ------------------------------------------------------------------
+
                  req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
                  self.logger.info(f"Comando 'fulfill' recibido: Leyendo BOM del Builder. Objetivo: {req_str}")
                  target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
@@ -343,6 +351,10 @@ class MinerBot(BaseAgent):
                 self._reset_mining_task(reset_requirements=True) 
                 self._parse_start_params(params)
                 
+                # --- MODIFICACIÓN: Reactivar IA automática al iniciar tarea nueva ---
+                self.manual_strategy_active = False 
+                # ------------------------------------------------------------------
+
                 if not self.requirements:
                     # TAREA POR DEFECTO: 40 Dirt y 40 Cobblestone
                     self.requirements = {"dirt": 40, "cobblestone": 40} 
@@ -374,10 +386,18 @@ class MinerBot(BaseAgent):
                 if self.current_strategy_name in self.strategy_classes:
                     self.mc.postToChat(f"[Miner] Estrategia cambiada de {old_strategy_name.upper()} a: {self.current_strategy_name.upper()}.")
                     
+                    # --- MODIFICACIÓN: Activar modo manual para evitar override adaptativo ---
+                    self.manual_strategy_active = True
+                    self.logger.info(f"Modo de estrategia manual activado: {self.current_strategy_name}")
+                    # -------------------------------------------------------------------------
+                    
                     if self.state == AgentState.RUNNING and old_strategy_name != self.current_strategy_name:
+                         # Reiniciamos la tarea interna (offsets, etc) pero MANTENIENDO el inventario
                          self._reset_mining_task(reset_requirements=False) 
+                         
+                         # Aseguramos que la instancia se actualizó en _reset_mining_task basado en el nombre actualizado
                          self.state = AgentState.RUNNING 
-                         self.logger.info("Tarea de minería reiniciada para aplicar la nueva estrategia.")
+                         self.logger.info("Tarea de minería reiniciada para aplicar la nueva estrategia en caliente.")
 
             elif command == 'pause':
                 self.handle_pause()
@@ -431,6 +451,8 @@ class MinerBot(BaseAgent):
 
                     self.logger.info(f"Minero desplazado a: ({self.mining_position.x}, {self.mining_position.z})")
                 
+                # Al ser flujo automático, permitimos que la IA decida (manual=False)
+                self.manual_strategy_active = False 
                 await self._select_adaptive_strategy()
                 
                 if self.requirements and self.state not in (AgentState.STOPPED, AgentState.ERROR): 
@@ -498,6 +520,11 @@ class MinerBot(BaseAgent):
                 self.logger.info(f"Estrategia manual: {strat}")
 
     async def _select_adaptive_strategy(self):
+        # --- MODIFICACIÓN: Si el usuario forzó una estrategia, ignoramos la adaptación ---
+        if self.manual_strategy_active:
+            return
+        # ---------------------------------------------------------------------------------
+
         if not self.requirements: return 
 
         pending = {m: q - self.inventory.get(m, 0) for m, q in self.requirements.items() if q > self.inventory.get(m, 0)}
@@ -561,8 +588,11 @@ class MinerBot(BaseAgent):
         remote_str = f"| Remoto: {len(self.remote_locks)} locks" if self.remote_locks else ""
         mining_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.y)}, {int(self.mining_position.z)})"
         
+        # Añadido estado Manual a status
+        strat_mode = "MANUAL" if self.manual_strategy_active else "AUTO"
+        
         status_message = (
-            f"[{self.agent_id}] Estado: {self.state.name} | Estrategia: {self.current_strategy_name.upper()} | "
+            f"[{self.agent_id}] Estado: {self.state.name} | Estrategia: {self.current_strategy_name.upper()} ({strat_mode}) | "
             f"Pos: {mining_pos} | Lock: {lock_status}{remote_str}\n"
             f"  > Progreso (Rec./Req.): {req_str}\n"
             f"  > Inventario Extra: {inv_str if inv_str else 'Vacio'}"

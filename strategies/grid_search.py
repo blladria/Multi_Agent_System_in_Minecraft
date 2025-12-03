@@ -27,8 +27,15 @@ class GridSearchStrategy(BaseMiningStrategy):
         if self.start_x is None:
             self.start_x = int(position.x)
             self.start_z = int(position.z)
+            
+            # Intentar obtener la altura inicial de forma segura
+            try:
+                initial_surface_y = self.mc.getHeight(self.start_x, self.start_z)
+            except Exception as e:
+                self.logger.warning(f"GridSearch: Error al obtener altura inicial. Usando fallback Y=65. Error: {e}")
+                initial_surface_y = 65
+
             # Fija el nivel Y de minería a la altura de la superficie inicial - 1 (para asegurar DIRT).
-            initial_surface_y = self.mc.getHeight(self.start_x, self.start_z)
             self.mining_y_level = initial_surface_y - 1
             # Para evitar minar en el aire, si la superficie es baja, minar el bloque de la superficie.
             if self.mining_y_level < 1: self.mining_y_level = initial_surface_y
@@ -46,7 +53,14 @@ class GridSearchStrategy(BaseMiningStrategy):
         z_target = self.start_z + self.search_z
         
         # 3. Actualizar la posición del agente (marcador)
-        marker_y = self.mc.getHeight(x_target, z_target) + 1 # Altura de pie
+        # --- FIX ROBUSTEZ: try-except para evitar crash por RequestError ---
+        try:
+            marker_y = self.mc.getHeight(x_target, z_target) + 1 # Altura de pie
+        except Exception as e:
+            # Si falla la conexión, no crasheamos el agente. Usamos la Y actual o un fallback.
+            self.logger.warning(f"GridSearch: Fallo de conexión en getHeight({x_target}, {z_target}). Manteniendo Y. Error: {e}")
+            marker_y = position.y # Mantenemos la altura actual para no teletransportarlo al vacío
+
         position.x = x_target
         position.z = z_target
         position.y = marker_y 
