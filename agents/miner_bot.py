@@ -1,3 +1,5 @@
+# blladria/multi_agent_system_in_minecraft/Multi_Agent_System_in_Minecraft-2b46a76b32b7996f3f518191e42414e3e4417aa5/agents/miner_bot.py
+
 # -*- coding: utf-8 -*-
 import asyncio
 import logging
@@ -306,15 +308,12 @@ class MinerBot(BaseAgent):
             command = payload.get("command_name")
             
             if command == 'fulfill':
-                 # *** SOLUCIÓN DE RACE CONDITION: Forzar la lectura de mensajes pendientes ***
-                 # Consumir el mensaje materials.requirements.v1 si está pendiente.
-                 while self.broker.has_messages(self.agent_id):
-                     incoming_message = await self.broker.consume_queue(self.agent_id)
-                     # Recursivamente manejar el mensaje para cargar los requisitos
-                     await self._handle_message(incoming_message)
-                     await asyncio.sleep(0.01) # Pequeña pausa para evitar bloqueo
-                 # --------------------------------------------------------------------------
-                 
+                 # FIX CRÍTICO: Pausa para asegurar que el mensaje 'materials.requirements.v1'
+                 # (enviado por BuilderBot con /builder bom) haya sido procesado por el 
+                 # ciclo 'perceive' antes de que el comando actúe sobre los requisitos cargados.
+                 # El código original contenía un bucle problemático que fue eliminado.
+                 await asyncio.sleep(0.5) 
+
                  # *** RESTRICCIÓN: Solo si self.requirements NO está vacío ***
                  if not self.requirements:
                      self.logger.warning("Comando 'fulfill' recibido, pero los requisitos (BOM) del Builder estan vacios. Intente usar /builder bom primero.")
@@ -363,6 +362,7 @@ class MinerBot(BaseAgent):
                     else: self.state = AgentState.IDLE
                     
             elif command == 'set': 
+                old_strategy_name = self.current_strategy_name
                 # El cambio de estrategia es instantáneo al re-instanciar self.current_strategy_instance
                 self._parse_set_strategy(params)
                 
@@ -370,10 +370,13 @@ class MinerBot(BaseAgent):
                     self.logger.info(f"Comando 'set strategy' recibido. Estrategia cambiada a: {self.current_strategy_name}.")
                     self.mc.postToChat(f"[Miner] Estrategia cambiada a: {self.current_strategy_name.upper()}.")
                     
-                    # Forzar una re-evaluación inmediata si estaba corriendo, rompiendo el bucle de la estrategia antigua
-                    if self.state == AgentState.RUNNING:
-                         self.state = AgentState.IDLE # Forzar re-entrada en el ciclo
-                         self.state = AgentState.RUNNING
+                    # FIX CRÍTICO: Forzar un reinicio de tarea si estaba corriendo para aplicar
+                    # la nueva estrategia inmediatamente en el siguiente ciclo 'act'.
+                    if self.state == AgentState.RUNNING and old_strategy_name != self.current_strategy_name:
+                         # Reiniciar la tarea de minería, manteniendo los requisitos cargados (reset_requirements=False)
+                         self._reset_mining_task(reset_requirements=False) 
+                         self.state = AgentState.RUNNING # Aseguramos que vuelva a RUNNING inmediatamente
+                         self.logger.info("Tarea de minería reiniciada para aplicar la nueva estrategia.")
 
             elif command == 'pause':
                 self.handle_pause()
