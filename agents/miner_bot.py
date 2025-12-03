@@ -11,7 +11,12 @@ from mcpi import block
 from core.agent_manager import AgentDiscovery 
 from strategies.base_strategy import BaseMiningStrategy # Solo necesitamos la clase base para el tipado
 
-# ELIMINADAS: Las importaciones de estrategias específicas (VerticalSearchStrategy, GridSearchStrategy, VeinSearchStrategy) 
+# IMPORTACIÓN DE FALLBACK: Necesaria para el caso de fallo de reflexión, 
+# para no instanciar la clase abstracta BaseMiningStrategy.
+# Esto garantiza que siempre se use una estrategia concreta.
+from strategies.vertical_search import VerticalSearchStrategy 
+
+# ELIMINADAS: Las importaciones de estrategias específicas (GridSearchStrategy, VeinSearchStrategy) 
 # se han eliminado, ahora se descubren automáticamente.
 
 # Mapeo de materiales
@@ -56,12 +61,11 @@ class MinerBot(BaseAgent):
         # Estrategias Disponibles: DESCUBRIMIENTO DINÁMICO (Reflection)
         self.strategy_classes: Dict[str, Type[BaseMiningStrategy]] = AgentDiscovery.discover_strategies()
         
-        # Determinar estrategia inicial (usando 'vertical' como fallback)
+        # Determinar estrategia inicial (usando 'vertical' como fallback de nombre)
         self.current_strategy_name = "vertical" 
         
-        # Instanciar la estrategia (usando el tipo descubierto)
-        # Se usa BaseMiningStrategy como fallback si 'vertical' no existe por alguna razón
-        InitialStrategy = self.strategy_classes.get(self.current_strategy_name, BaseMiningStrategy)
+        # Instanciar la estrategia (usando el tipo descubierto o VerticalSearchStrategy como fallback SEGURO)
+        InitialStrategy = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
         self.current_strategy_instance = InitialStrategy(self.mc, self.logger)
         
         self.logger.info(f"MinerBot: Estrategias descubiertas: {list(self.strategy_classes.keys())}. Inicial: {self.current_strategy_name}")
@@ -256,10 +260,10 @@ class MinerBot(BaseAgent):
         self.mining_sector_locked = False
         self.locked_sector_id = ""
         # Forzar la recreación de la instancia de la estrategia
-        # Utiliza la clase descubierta dinámicamente
-        NewStrategy = self.strategy_classes.get(self.current_strategy_name)
-        if NewStrategy:
-             self.current_strategy_instance = NewStrategy(self.mc, self.logger)
+        # Utiliza la clase descubierta dinámicamente o el fallback seguro
+        NewStrategy = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
+        self.current_strategy_instance = NewStrategy(self.mc, self.logger)
+
         self.logger.info("Tarea de minería reseteada para nueva ejecución.")
     # -----------------------------------------------------------
 
@@ -354,9 +358,8 @@ class MinerBot(BaseAgent):
                  # ----------------------------------------------------------------
                  
                  # Reiniciar la instancia de estrategia
-                 NewStrategy = self.strategy_classes.get(self.current_strategy_name)
-                 if NewStrategy:
-                    self.current_strategy_instance = NewStrategy(self.mc, self.logger)
+                 NewStrategy = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
+                 self.current_strategy_instance = NewStrategy(self.mc, self.logger)
 
                  self.logger.info(f"Minero desplazado a: ({self.mining_position.x}, {self.mining_position.z})")
             
@@ -446,9 +449,8 @@ class MinerBot(BaseAgent):
         if new_strat != self.current_strategy_name:
             self.current_strategy_name = new_strat
             # Recrear la instancia al cambiar de estrategia
-            NewStrategy = self.strategy_classes.get(new_strat)
-            if NewStrategy:
-                self.current_strategy_instance = NewStrategy(self.mc, self.logger)
+            NewStrategy = self.strategy_classes.get(new_strat, VerticalSearchStrategy)
+            self.current_strategy_instance = NewStrategy(self.mc, self.logger)
             self.logger.info(f"Estrategia cambiada a: {new_strat} (Objetivo: {most_needed})")
 
     async def _publish_inventory_update(self, status: str):
