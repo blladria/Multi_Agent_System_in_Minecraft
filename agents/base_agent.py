@@ -257,18 +257,27 @@ class BaseAgent(ABC):
                 state_loaded = json.load(f)
             
             # 1. Restaurar el estado y el contexto
-            self._state = AgentState[state_loaded.get("state", "IDLE")]
+            loaded_state_name = state_loaded.get("state", "IDLE")
+            
+            # --- FIX CRÍTICO APLICADO AQUÍ ---
+            # Si el estado cargado NO es un estado terminal (STOPPED/ERROR), 
+            # lo reseteamos a IDLE para evitar ejecuciones automáticas al reiniciar el Manager.
+            if loaded_state_name not in ["STOPPED", "ERROR"]:
+                self._state = AgentState.IDLE
+                self.logger.info(f"Checkpoint cargado: Estado anterior era {loaded_state_name}, forzado a IDLE.")
+            else:
+                 self._state = AgentState[loaded_state_name]
+                 self.logger.info(f"Checkpoint cargado. Estado: {self._state.name}")
+            # ----------------------------------
+
             self.context = state_loaded.get("context", {})
 
             # 2. Restaurar la posición del marcador
             mx, my, mz = state_loaded.get("marker_position", (0, 70, 0))
             self.marker_position = Vec3(mx, my, mz)
 
-            self.logger.info(f"Checkpoint cargado. Estado: {self._state.name}")
-
             # Limpiamos el archivo después de cargarlo para que el próximo inicio sea limpio, 
             # a menos que se quiera persistir el estado entre ejecuciones.
-            # Lo dejamos para que se persista el estado si el agente termina en STOPPED y se reinicia el sistema.
             
         except Exception as e:
             self.logger.error(f"Error al cargar checkpoint: {e}. Reiniciando estado a IDLE.")
