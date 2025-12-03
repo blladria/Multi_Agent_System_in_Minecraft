@@ -268,16 +268,21 @@ class MinerBot(BaseAgent):
         self.release_locks()
         self._mining_offset += 1 
         self.logger.info("Ciclo minería completado.")
-        self.mc.postToChat(f"[Miner] Ciclo de mineria completado. Requisitos cubiertos.") # Eliminado acento
+        self.mc.postToChat(f"[Miner] Ciclo de mineria completado. Requisitos cubiertos.")
     
-    # --- MÉTODOS DE MANEJO DE ESTADO Y COMANDOS ---
+    # --- MÉTODOS DE MANEJO DE ESTADO Y COMANDOS (MODIFICADO) ---
 
-    def _reset_mining_task(self):
-        """Reinicia el inventario y requisitos para una nueva tarea manual."""
+    def _reset_mining_task(self, reset_requirements: bool = True):
+        """
+        Reinicia el inventario y estado para una nueva tarea manual.
+        Si reset_requirements es False, mantiene los requisitos del BuilderBot.
+        """
         if self.mining_sector_locked:
             self.release_locks() 
             
-        self.requirements = {}
+        if reset_requirements:
+             self.requirements = {}
+             
         self.inventory = {mat: 0 for mat in MATERIAL_MAP.keys()}
         self._mining_offset = 0 # Reiniciar offset para empezar desde la base
         self.state = AgentState.IDLE
@@ -288,64 +293,67 @@ class MinerBot(BaseAgent):
         NewStrategy = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
         self.current_strategy_instance = NewStrategy(self.mc, self.logger)
 
-        self.logger.info("Tarea de mineria reseteada para nueva ejecucion.") # Eliminado acento
+        self.logger.info("Tarea de mineria reseteada para nueva ejecucion.")
 
     async def _handle_message(self, message: Dict[str, Any]):
         msg_type = message.get("type")
         payload = message.get("payload", {})
+        params = payload.get("parameters", {})
 
         if msg_type.startswith("command."):
             command = payload.get("command_name")
-            if command in ['start', 'fulfill']:
+            
+            if command == 'fulfill':
+                 # *** RESTRICCIÓN CRÍTICA PARA 'fulfill' ***
+                 if not self.requirements:
+                     self.logger.warning("Comando 'fulfill' recibido, pero los requisitos (BOM) del Builder estan vacios. Intente usar /builder bom primero.")
+                     self.mc.postToChat("[Miner] Alerta! No hay requisitos del Builder (BOM) cargados. Use /builder bom y luego /miner fulfill.")
+                     return
+                 
+                 # Si hay requisitos, los mantenemos y reseteamos el resto
+                 self._reset_mining_task(reset_requirements=False) 
+                 self._parse_start_params(params)
+                 
+                 req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
+                 self.logger.info(f"Comando 'fulfill' recibido: Leyendo BOM del Builder. Objetivo: {req_str}")
+                 target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
+                 self.mc.postToChat(f"[Miner] Tarea: Recolectar BOM de BuilderBot. Requisitos: {req_str}. Estrategia: {self.current_strategy_name.upper()}. Iniciando en {target_pos}.")
+                 
+                 # Iniciar la minería
+                 await self._select_adaptive_strategy()
+                 if not self._check_requirements_fulfilled():
+                     self.state = AgentState.RUNNING
+                 else: self.state = AgentState.IDLE
+                 
+            elif command == 'start':
+                # 'start' siempre resetea los requisitos por si el usuario quiere una tarea nueva.
+                self._reset_mining_task(reset_requirements=True) 
+                self._parse_start_params(params)
                 
-                self._reset_mining_task()
-                self._parse_start_params(payload.get("parameters", {}))
-                
-                # --- NUEVA LÓGICA EXPLICITA PARA 'start' y 'fulfill' ---
-
-                if command == 'fulfill':
-                    if not self.requirements:
-                        # Caso de error: No hay BOM del Builder
-                        self.logger.warning("Comando 'fulfill' recibido, pero los requisitos (BOM) del Builder estan vacios. Intente usar /builder bom primero.") # Eliminado acento
-                        # Eliminado el emoticono '⚠️' y acentos
-                        self.mc.postToChat("[Miner] Alerta! No hay requisitos del Builder (BOM) cargados. Use /builder bom y luego /miner fulfill.")
-                        return 
-                    
-                    req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
-                    
-                    # LOGGING MEJORADO
-                    self.logger.info(f"Comando 'fulfill' recibido: Leyendo BOM del Builder. Objetivo: {req_str}")
-                    
-                    # CHAT MEJORADO
-                    target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
-                    self.mc.postToChat(f"[Miner] Tarea: Recolectar BOM de BuilderBot. Requisitos: {req_str}. Estrategia: {self.current_strategy_name.upper()}. Iniciando en {target_pos}.")
-                
-                elif command == 'start' and not self.requirements:
-                    # TAREA POR DEFECTO para 'start' sin parámetros de requisitos
+                if not self.requirements:
+                    # TAREA POR DEFECTO para 'start' sin parámetros de requisitos (40/40)
                     self.requirements = {"dirt": 40, "cobblestone": 40} 
-                    self.logger.info("Iniciando mineria manual con tarea por defecto: 40 Dirt y 40 Cobblestone.") # Eliminado acento
+                    self.logger.info("Iniciando mineria manual con tarea por defecto: 40 Dirt y 40 Cobblestone.")
                     
                     target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
                     req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
-                    self.mc.postToChat(f"[Miner] Mineria manual iniciada. Objetivo: {req_str}. Estrategia: {self.current_strategy_name.upper()}.") # Eliminado acento
-                
-                elif command == 'start':
-                     # TAREA para 'start' con parámetros de posición y/o requisitos ya seteados
+                    self.mc.postToChat(f"[Miner] Mineria manual iniciada. Objetivo: {req_str}. Estrategia: {self.current_strategy_name.upper()}.")
+                else:
+                    # TAREA para 'start' con parámetros de posición y/o requisitos ya seteados
                     target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
                     req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
-                    self.mc.postToChat(f"[Miner] Mineria re-iniciada. Objetivo: {req_str}. Estrategia: {self.current_strategy_name.upper()}.") # Eliminado acento
+                    self.mc.postToChat(f"[Miner] Mineria re-iniciada. Objetivo: {req_str}. Estrategia: {self.current_strategy_name.upper()}.")
 
-
-                # Si hay requisitos establecidos (por 'fulfill', 'start' por defecto o 'start' con requisitos), iniciar el ciclo.
+                # Si hay requisitos establecidos, iniciar el ciclo.
                 if self.requirements:
                     await self._select_adaptive_strategy() 
                     if not self._check_requirements_fulfilled():
                         self.state = AgentState.RUNNING
                     else: self.state = AgentState.IDLE
-                # --- FIN NUEVA LÓGICA ---
-
+                    
             elif command == 'set': 
-                self._parse_set_strategy(payload.get("parameters", {}))
+                # El cambio de estrategia es instantáneo al re-instanciar self.current_strategy_instance
+                self._parse_set_strategy(params)
                 
                 if self.current_strategy_name in self.strategy_classes:
                     self.logger.info(f"Comando 'set strategy' recibido. Estrategia cambiada a: {self.current_strategy_name}.")
@@ -363,7 +371,7 @@ class MinerBot(BaseAgent):
 
             elif command == 'stop':
                 self.handle_stop()
-                self.logger.info(f"Comando 'stop' recibido. Mineria detenida y locks liberados.") # Eliminado acento
+                self.logger.info(f"Comando 'stop' recibido. Mineria detenida y locks liberados.")
                 self.mc.postToChat(f"[Miner] Detenido. Locks liberados. Estado: STOPPED.")
                 self._clear_marker()
 
@@ -372,35 +380,51 @@ class MinerBot(BaseAgent):
 
             
         elif msg_type == "materials.requirements.v1":
-            self.requirements = payload.copy()
-            self.logger.info(f"Nuevos requisitos recibidos: {self.requirements}")
+            # Cargar requisitos
+            new_requirements = payload.copy()
             
-            self.inventory = {mat: 0 for mat in MATERIAL_MAP.keys()}
+            # Solo actualizamos si el payload no está vacío
+            if new_requirements:
+                 self.requirements = new_requirements
+                 self.inventory = {mat: 0 for mat in MATERIAL_MAP.keys()}
+                 self.logger.info(f"Nuevos requisitos cargados: {self.requirements}")
             
-            ctx_zone = message.get("context", {}).get("target_zone")
-            if ctx_zone:
-                 bx, bz = int(ctx_zone['x']), int(ctx_zone['z'])
-                 offset_magnitude = 3 * self.SECTOR_SIZE
-                 
-                 self.mining_position.x = bx + offset_magnitude
-                 self.mining_position.z = bz + offset_magnitude
-                 
-                 try:
-                     self.mining_position.y = self.mc.getHeight(self.mining_position.x, self.mining_position.z) + 1
-                     self.surface_marker_y = self.mining_position.y
-                 except Exception:
-                     self.mining_position.y = 65
-                     self.surface_marker_y = 66
-                 
-                 NewStrategy = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
-                 self.current_strategy_instance = NewStrategy(self.mc, self.logger)
+            # --- MODIFICACIÓN: SOLO INICIAR SI EL STATUS ES PENDING ---
+            # Si el status es ACKNOWLEDGED (desde /builder bom), solo cargamos requisitos.
+            if message.get("status") == "PENDING":
+                ctx_zone = message.get("context", {}).get("target_zone")
+                if ctx_zone:
+                    bx, bz = int(ctx_zone['x']), int(ctx_zone['z'])
+                    offset_magnitude = 3 * self.SECTOR_SIZE
+                    
+                    self.mining_position.x = bx + offset_magnitude
+                    self.mining_position.z = bz + offset_magnitude
+                    
+                    try:
+                        self.mining_position.y = self.mc.getHeight(self.mining_position.x, self.mining_position.z) + 1
+                        self.surface_marker_y = self.mining_position.y
+                    except Exception:
+                        self.mining_position.y = 65
+                        self.surface_marker_y = 66
+                    
+                    NewStrategy = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
+                    self.current_strategy_instance = NewStrategy(self.mc, self.logger)
 
-                 self.logger.info(f"Minero desplazado a: ({self.mining_position.x}, {self.mining_position.z})")
-            
-            await self._select_adaptive_strategy()
-            
-            if self.state in (AgentState.IDLE, AgentState.WAITING): 
-                self.state = AgentState.RUNNING
+                    self.logger.info(f"Minero desplazado a: ({self.mining_position.x}, {self.mining_position.z})")
+                
+                await self._select_adaptive_strategy()
+                
+                if self.requirements and self.state not in (AgentState.STOPPED, AgentState.ERROR): 
+                    if not self._check_requirements_fulfilled():
+                        self.state = AgentState.RUNNING
+                    else: 
+                        self.state = AgentState.IDLE
+                        self.mc.postToChat("[Miner] Requisitos de BOM ya cubiertos. IDLE.")
+            else:
+                 # Mensaje de ACKNOWLEDGED, solo se cargó el plan.
+                 self.mc.postToChat(f"[Miner] Requisitos cargados (ACKNOWLEDGED). Use /miner fulfill para iniciar.")
+            # --- FIN MODIFICACIÓN ---
+
 
         elif msg_type == "lock.spatial.v1":
             sector_id = payload.get("sector_id")

@@ -159,7 +159,7 @@ class BuilderBot(BaseAgent):
                 self.logger.info(f"Esperando materiales para '{self.current_template_name}'.")
                 self.state = AgentState.WAITING 
             else:
-                self.logger.info("Materiales listos y zona definida. Iniciando construccion.") # Eliminado acento
+                self.logger.info("Materiales listos y zona definida. Iniciando construccion.")
                 self.is_building = True
 
     async def act(self):
@@ -191,7 +191,7 @@ class BuilderBot(BaseAgent):
                 self._clear_marker() 
                 # ----------------------------------------------------
             else:
-                 self.logger.warning("Construccion interrumpida.") # Eliminado acento
+                 self.logger.warning("Construccion interrumpida.")
 
     async def _build_structure(self, center_pos: Vec3):
         """Itera sobre la lista de bloques de la plantilla y los coloca en el mundo."""
@@ -229,8 +229,8 @@ class BuilderBot(BaseAgent):
                     # Obtenemos el ID de Minecraft desde nuestro mapa
                     block_id = MATERIAL_MAP.get(material_key, block.COBBLESTONE.id)
                 else:
-                    self.logger.error(f"¡Material '{material_key}' agotado a mitad de obra! Pasando a WAITING.")
-                    self.mc.postToChat(f"[Builder] Material '{material_key}' agotado. Pausando construccion. Estado: WAITING.") # Nuevo mensaje de alerta, eliminado acento
+                    self.logger.error(f"Material '{material_key}' agotado a mitad de obra! Pasando a WAITING.")
+                    self.mc.postToChat(f"[Builder] Material '{material_key}' agotado. Pausando construccion. Estado: WAITING.")
                     self.is_building = False
                     self.state = AgentState.WAITING 
                     return
@@ -247,12 +247,12 @@ class BuilderBot(BaseAgent):
 
             except Exception as e:
                 self.logger.error(f"Error poniendo bloque: {e}")
-                self.mc.postToChat(f"[Builder] ERROR fatal al construir. Estado: ERROR.") # Nuevo mensaje de error, eliminado acento
+                self.mc.postToChat(f"[Builder] ERROR fatal al construir. Estado: ERROR.")
                 self.is_building = False
                 self.state = AgentState.ERROR
                 return
 
-        self.logger.info(f"Construccion de '{self.current_template_name}' finalizada con exito.") # Eliminado acento
+        self.logger.info(f"Construccion de '{self.current_template_name}' finalizada con exito.")
 
     async def _publish_status(self):
         """Genera y envía un mensaje de estado detallado al chat del juego."""
@@ -267,7 +267,7 @@ class BuilderBot(BaseAgent):
                 if current_qty < required_qty:
                     is_ready = False
         
-        req_status = "LISTO" if is_ready and self.required_bom else "PENDIENTE" # Eliminado emoticono
+        req_status = "LISTO" if is_ready and self.required_bom else "PENDIENTE"
         req_str = ", ".join(req_bom_str) if req_bom_str else "Ninguno"
 
         # 2. Zona y Plantilla
@@ -303,8 +303,8 @@ class BuilderBot(BaseAgent):
                 if self.state == AgentState.WAITING:
                      self.mc.postToChat(f"[Builder] Recibido 'build', esperando materiales. Estado: WAITING.")
                 self.state = AgentState.RUNNING
-                self.logger.info(f"Comando 'build' recibido. Iniciando ciclo de construccion.") # Eliminado acento
-                self.mc.postToChat(f"[Builder] Iniciando construccion de '{self.current_template_name}'.") # Eliminado acento
+                self.logger.info(f"Comando 'build' recibido. Iniciando ciclo de construccion.")
+                self.mc.postToChat(f"[Builder] Iniciando construccion de '{self.current_template_name}'.")
                 # --- FIN MEJORA ---
             
             # --- COMANDO MANUAL DE CAMBIO DE PLAN ---
@@ -321,9 +321,10 @@ class BuilderBot(BaseAgent):
                         self.mc.postToChat(f"[Builder] Plantilla cambiada a: '{template_name}'. Calculando BOM...")
                         # --- FIN MEJORA ---
                         
-                        # Si ya tenemos zona, actualizar BOM al instante
+                        # Si ya tenemos zona, actualizar BOM al instante (sigue la lógica de auto-calculo si hay mapa)
                         if self.target_zone:
                             self.required_bom = self._calculate_bom_for_structure()
+                            # En el flujo 'plan set' se mantiene el comportamiento original de publicar PENDING si hay mapa.
                             await self._publish_requirements_to_miner()
                     else:
                         self.mc.postToChat(f"[Builder] No conozco la plantilla '{template_name}'.")
@@ -342,26 +343,27 @@ class BuilderBot(BaseAgent):
 
             elif command == 'stop': 
                 self.handle_stop()
-                self.logger.info(f"Comando 'stop' recibido. Construccion detenida.") # Eliminado acento
+                self.logger.info(f"Comando 'stop' recibido. Construccion detenida.")
                 self.mc.postToChat(f"[Builder] Detenido. Estado: STOPPED.")
                 self._clear_marker()
 
             elif command == 'bom':
-                 # --- INICIO DE LA CORRECCIÓN CRÍTICA ---
-                 # 1. Forzar el cálculo del BOM con la plantilla actual
+                 # --- MODIFICACIÓN: BOM SÓLO MUESTRA Y PÚBLICA COMO ACKNOWLEDGED ---
                  self.required_bom = self._calculate_bom_for_structure()
                  
-                 # 2. Publicar si el cálculo produjo algo
+                 req_str = ", ".join([f"{q} {m}" for m, q in self.required_bom.items()])
+
                  if self.required_bom:
-                    await self._publish_requirements_to_miner()
+                    # 1. Publicar al MinerBot con estado 'ACKNOWLEDGED' para CARGAR los requisitos (sin iniciar minería).
+                    await self._publish_requirements_to_miner(status="ACKNOWLEDGED")
                     
-                    req_str = ", ".join([f"{q} {m}" for m, q in self.required_bom.items()])
-                    self.logger.info(f"Comando 'bom' recibido. Reenviando BOM: {req_str}")
-                    self.mc.postToChat(f"[Builder] BOM reenviado. Requisitos: {req_str}")
+                    # 2. Mostrar mensaje en chat.
+                    self.logger.info(f"Comando 'bom' recibido. Requisitos calculados: {req_str}")
+                    self.mc.postToChat(f"[Builder] BOM calculado para '{self.current_template_name}': {req_str}")
                  else:
                      self.logger.warning(f"Comando 'bom' recibido. La plantilla '{self.current_template_name}' no requiere materiales.")
                      self.mc.postToChat(f"[Builder] Alerta: La plantilla actual '{self.current_template_name}' no requiere materiales.")
-                 # --- FIN DE LA CORRECCIÓN CRÍTICA ---
+                 # --- FIN DE MODIFICACIÓN ---
 
             elif command == 'status':
                 await self._publish_status()
@@ -390,7 +392,8 @@ class BuilderBot(BaseAgent):
             # Calcular BOM y pedir materiales
             self.required_bom = self._calculate_bom_for_structure() 
             if self.required_bom:
-                await self._publish_requirements_to_miner()
+                # Flujo de trabajo automático SÍ publica con PENDING (para inicio automático)
+                await self._publish_requirements_to_miner(status="PENDING")
             
             # Decidir si empezamos o esperamos
             if self._check_inventory():
@@ -406,20 +409,24 @@ class BuilderBot(BaseAgent):
             
             if self.state == AgentState.WAITING and self._check_inventory():
                 self.state = AgentState.RUNNING
-                self.mc.postToChat(f"[Builder] Materiales recibidos. Iniciando construccion. Estado: RUNNING.") # Eliminado acento
+                self.mc.postToChat(f"[Builder] Materiales recibidos. Iniciando construccion. Estado: RUNNING.")
                 
-    async def _publish_requirements_to_miner(self):
+    async def _publish_requirements_to_miner(self, status: str = "PENDING"):
+        """
+        Publica los requisitos.
+        status: "PENDING" (inicia minería), "ACKNOWLEDGED" (solo carga requisitos).
+        """
         requirements_message = {
             "type": "materials.requirements.v1",
             "source": self.agent_id,
             "target": "MinerBot",
             "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "payload": self.required_bom,
-            "status": "PENDING",
+            "status": status, # Usa el estado pasado
             "context": {"target_zone": self.target_zone}
         }
         await self.broker.publish(requirements_message)
-        self.logger.info(f"Enviando BOM a MinerBot: {self.required_bom}")
+        self.logger.info(f"Enviando BOM a MinerBot con estado '{status}': {self.required_bom}")
     
     async def _publish_build_complete(self):
         build_message = {
@@ -431,5 +438,5 @@ class BuilderBot(BaseAgent):
             "status": "SUCCESS"
         }
         await self.broker.publish(build_message)
-        self.logger.info("Construccion completada publicada.") # Eliminado acento
-        self.mc.postToChat(f"[Builder] Construccion de '{self.current_template_name}' finalizada con exito.") # Eliminado acento
+        self.logger.info("Construccion completada publicada.")
+        self.mc.postToChat(f"[Builder] Construccion de '{self.current_template_name}' finalizada con exito.")
