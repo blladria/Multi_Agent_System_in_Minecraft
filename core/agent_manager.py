@@ -7,14 +7,13 @@ import os
 import logging.handlers
 from datetime import datetime
 import pkgutil
-from typing import Dict, Type # Importación añadida
+from typing import Dict, Type 
 from mcpi.minecraft import Minecraft
 from core.message_broker import MessageBroker
 from agents.base_agent import BaseAgent, AgentState 
-# NUEVA IMPORTACIÓN: Necesaria para el descubrimiento de estrategias
 from strategies.base_strategy import BaseMiningStrategy 
 
-# Configuración del logger global para capturar logs antes de instanciar la clase
+# Configuración del logger global
 logger = logging.getLogger("AgentManagerGlobal")
 
 # --- Función de Configuración de Logging ---
@@ -26,7 +25,6 @@ def setup_system_logging(log_file_name: str = 'system.log'):
 
     root_logger = logging.getLogger()
     
-    # Limpiar handlers antiguos para evitar duplicados en tests
     handlers_to_remove = []
     for h in root_logger.handlers:
         if isinstance(h, (logging.handlers.RotatingFileHandler, logging.FileHandler, logging.StreamHandler)):
@@ -54,7 +52,7 @@ def setup_system_logging(log_file_name: str = 'system.log'):
     
     logging.getLogger("LoggingSetup").info(f"Logging configurado en: {log_file_name}")
 
-# --- CLASE DE AYUDA PARA LA REFLEXIÓN (MODIFICADA PARA SER GENÉRICA) ---
+# --- CLASE DE AYUDA PARA LA REFLEXIÓN ---
 
 class AgentDiscovery:
     
@@ -63,17 +61,11 @@ class AgentDiscovery:
         """Método genérico para descubrir subclases de una clase base en un paquete."""
         discovered_classes = []
         try:
-            # Importa dinámicamente el paquete (e.g., 'agents' o 'strategies')
             package = __import__(package_name)
-            
-            # Recorre todos los módulos dentro de ese paquete
             for _, name, is_pkg in pkgutil.walk_packages(package.__path__):
                 if not is_pkg:
                     try:
-                        # Importa dinámicamente el módulo (e.g., 'agents.builder_bot')
                         module = __import__(f"{package_name}.{name}", fromlist=[name])
-                        
-                        # Inspecciona los miembros del módulo en busca de clases
                         for item_name, item_obj in inspect.getmembers(module, inspect.isclass):
                             if (issubclass(item_obj, base_class) and 
                                 item_obj is not base_class and 
@@ -95,10 +87,20 @@ class AgentDiscovery:
     def discover_strategies(package_name: str = 'strategies') -> dict[str, type[BaseMiningStrategy]]:
         """Descubre todas las clases de Estrategia y las mapea por nombre clave para MinerBot."""
         strategy_classes = AgentDiscovery._discover_classes(package_name, BaseMiningStrategy)
-        # Mapea 'VerticalSearchStrategy' a 'vertical' (quitando 'Strategy' y en minúsculas)
-        return {cls.__name__.replace('Strategy', '').lower(): cls for cls in strategy_classes}
+        
+        # CORRECCIÓN: Limpieza de nombre agresiva para coincidir con comandos ('grid', 'vertical')
+        strategies_map = {}
+        for cls in strategy_classes:
+            # Ejemplo: GridSearchStrategy -> "grid"
+            # 1. replace('SearchStrategy', '') -> "Grid"
+            # 2. replace('Strategy', '') -> (backup por si acaso)
+            # 3. lower() -> "grid"
+            clean_name = cls.__name__.replace('SearchStrategy', '').replace('Strategy', '').lower()
+            strategies_map[clean_name] = cls
+            
+        return strategies_map
 
-# --- CLASE PRINCIPAL: AGENT MANAGER (Sin cambios en su lógica principal) ---
+# --- CLASE PRINCIPAL: AGENT MANAGER ---
 
 class AgentManager:
     """Orquesta el sistema y gestiona el ciclo de vida."""
@@ -110,13 +112,11 @@ class AgentManager:
         self.agent_tasks: dict[str, asyncio.Task] = {}
         self.is_running = False
         
-        # FIX: Inicializar logger como atributo de instancia para evitar el error 'has no attribute logger'
         self.logger = logging.getLogger("AgentManager")
         self.logger.info("Agent Manager inicializado.")
 
     def initialize_minecraft(self):
         try:
-            # ... (Lógica de inicialización)
             self.mc = Minecraft.create()
             self.mc.postToChat("Manager: Sistema iniciado.")
             self.logger.info("Conexion con Minecraft API exitosa.")
@@ -136,7 +136,6 @@ class AgentManager:
 
         for AgentClass in AgentClasses:
             agent_id = AgentClass.__name__
-            # ... (Resto de la lógica de inicio)
             agent_instance = AgentClass(agent_id, self.mc, self.broker)
             self.agents[agent_id] = agent_instance
             self.broker.subscribe(agent_id)
@@ -150,7 +149,6 @@ class AgentManager:
         await self._chat_command_monitor()
         
     async def _chat_command_monitor(self):
-        # ... (Lógica de monitorización)
         self.mc.events.clearAll()
         self.logger.info("Monitor de chat activo.")
         
@@ -165,7 +163,6 @@ class AgentManager:
                 await asyncio.sleep(5)
 
     async def _broadcast_control_command(self, command_name: str):
-        # ... (Lógica de broadcast)
         self.logger.info(f"Broadcasting comando: {command_name}")
         self.mc.postToChat(f"Manager: Ejecutando '{command_name.upper()}' global.")
         
@@ -194,46 +191,34 @@ class AgentManager:
             
         command_root = parts[0] # Ej: 'agent', 'miner', 'explorer'
         
-        # Parsear argumentos clave=valor
         arg_map = {}
         for arg in parts[2:]:
             if '=' in arg:
                 key, val = arg.split('=', 1)
                 arg_map[key] = val
 
-        # 1. Comandos Generales (Broadcast)
         if command_root == 'agent' and len(parts) > 1:
             subcommand = parts[1].lower()
             
             if subcommand == 'status':
                 status_msg = " | ".join([f"{name}: {a.state.name}" for name, a in self.agents.items()])
                 self.mc.postToChat(f"ESTADO: {status_msg}")
-            
-            elif subcommand == 'stop':
-                await self._broadcast_control_command("stop")
-                
-            elif subcommand == 'pause':
-                await self._broadcast_control_command("pause")
-                
-            elif subcommand == 'resume':
-                await self._broadcast_control_command("resume")
-                
+            elif subcommand == 'stop': await self._broadcast_control_command("stop")
+            elif subcommand == 'pause': await self._broadcast_control_command("pause")
+            elif subcommand == 'resume': await self._broadcast_control_command("resume")
             elif subcommand == 'help':
                 self.mc.postToChat("Manager: agent [status|pause|resume|stop]")
                 self.mc.postToChat("Agentes: <Nombre> <comando> (ej: explorer start x=10 z=10)")
         
-        # 2. Comando Workflow (Orquestación)
         elif command_root == 'workflow' and len(parts) > 1 and parts[1].lower() == 'run':
             await self._execute_workflow_run(arg_map)
             
-        # 3. Comandos Específicos (Unicast)
         elif command_root.capitalize() + 'Bot' in self.agents:
             target_agent_id = command_root.capitalize() + 'Bot'
             if len(parts) < 2:
                 self.mc.postToChat(f"Faltan argumentos para {target_agent_id}")
                 return
 
-            # Mantener la estructura original para el envío
             control_msg = {
                 "type": "command.control.v1",
                 "source": "Manager",
@@ -247,24 +232,13 @@ class AgentManager:
             }
             await self.broker.publish(control_msg)
             
-        else:
-            # Comando desconocido
-            pass
-            
     async def _execute_workflow_run(self, arg_map: Dict[str, str]):
-        """
-        Maneja el comando '/workflow run' orquestando la secuencia de agentes.
-        1. Inicia ExplorerBot.
-        2. Configura BuilderBot y MinerBot si se pasan parámetros.
-        """
         self.logger.info(f"Iniciando workflow run con parámetros: {arg_map}")
         self.mc.postToChat("Manager: Iniciando Workflow Run (Exploración -> Minería -> Construcción).")
         timestamp = datetime.utcnow().isoformat() + 'Z'
         
-        # 1. Configurar BuilderBot: Plantilla (template)
         if 'template' in arg_map and 'BuilderBot' in self.agents:
             template_name = arg_map['template']
-            # Enviar comando 'plan set <template>'
             plan_msg = {
                 "type": "command.control.v1", "source": "Manager", "target": "BuilderBot", "timestamp": timestamp,
                 "payload": {"command_name": "plan", "parameters": {"args": ["set", template_name]}},
@@ -273,11 +247,9 @@ class AgentManager:
             await self.broker.publish(plan_msg)
             self.logger.info(f"Configurado BuilderBot con plantilla: {template_name}")
             
-        # 2. Configurar MinerBot: Posición y Estrategia
         miner_args = []
         if 'miner.strategy' in arg_map and 'MinerBot' in self.agents:
             strategy = arg_map['miner.strategy']
-            # Enviar comando 'set strategy <strategy>'
             strat_msg = {
                 "type": "command.control.v1", "source": "Manager", "target": "MinerBot", "timestamp": timestamp,
                 "payload": {"command_name": "set", "parameters": {"args": ["strategy", strategy]}},
@@ -291,7 +263,6 @@ class AgentManager:
         if 'miner.z' in arg_map: miner_args.append(f"z={arg_map['miner.z']}")
         
         if miner_args:
-             # Enviar comando 'start' al MinerBot con la posición, si se especificó
              miner_start_msg = {
                 "type": "command.control.v1", "source": "Manager", "target": "MinerBot", "timestamp": timestamp,
                 "payload": {"command_name": "start", "parameters": {"args": miner_args}},
@@ -300,15 +271,12 @@ class AgentManager:
              await self.broker.publish(miner_start_msg)
              self.logger.info("MinerBot posicionado.")
 
-
-        # 3. Iniciar ExplorerBot: Explora la zona (esto desencadena el resto del workflow)
         if 'ExplorerBot' in self.agents:
             explorer_args = []
             if 'x' in arg_map: explorer_args.append(f"x={arg_map['x']}")
             if 'z' in arg_map: explorer_args.append(f"z={arg_map['z']}")
             if 'range' in arg_map: explorer_args.append(f"range={arg_map['range']}")
             
-            # Enviar comando 'start' al ExplorerBot
             explorer_start_msg = {
                 "type": "command.control.v1", "source": "Manager", "target": "ExplorerBot", "timestamp": timestamp,
                 "payload": {"command_name": "start", "parameters": {"args": explorer_args}},
@@ -319,7 +287,5 @@ class AgentManager:
         else:
             self.mc.postToChat("Manager: ERROR - ExplorerBot no encontrado.")
 
-
     def _get_system_status(self):
-        # Método auxiliar si se necesita status interno
         return {name: agent.state.name for name, agent in self.agents.items()}
