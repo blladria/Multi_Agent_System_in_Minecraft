@@ -307,7 +307,7 @@ class MinerBot(BaseAgent):
                 
                 target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
                 req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
-                self.mc.postToChat(f"[Miner] ⛏️ Minería iniciada en {target_pos}. Objetivo: {req_str}. Estrategia: {self.current_strategy_name.upper()}.")
+                self.mc.postToChat(f"[Miner]  Minería iniciada en {target_pos}. Objetivo: {req_str}. Estrategia: {self.current_strategy_name.upper()}.")
                 
                 await self._select_adaptive_strategy() 
                 if not self._check_requirements_fulfilled():
