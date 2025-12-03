@@ -254,6 +254,41 @@ class BuilderBot(BaseAgent):
 
         self.logger.info(f"Construcción de '{self.current_template_name}' finalizada con éxito.")
 
+    async def _publish_status(self):
+        """Genera y envía un mensaje de estado detallado al chat del juego."""
+        
+        # 1. Requisitos y Progreso
+        req_bom_str = []
+        is_ready = True
+        if self.required_bom:
+            for material, required_qty in self.required_bom.items():
+                current_qty = self.current_inventory.get(material, 0)
+                req_bom_str.append(f"{current_qty}/{required_qty} {material}")
+                if current_qty < required_qty:
+                    is_ready = False
+        
+        req_status = "LISTO ✅" if is_ready and self.required_bom else "PENDIENTE ⏳"
+        req_str = ", ".join(req_bom_str) if req_bom_str else "Ninguno"
+
+        # 2. Zona y Plantilla
+        zone_str = f"({self.target_zone.get('x', '?')}, {self.target_zone.get('z', '?')})"
+        
+        # 3. Estado de la Construcción
+        build_status = "SI" if self.is_building else "NO"
+        
+        # Formato del mensaje de estado
+        status_message = (
+            f"[{self.agent_id}]  Estado: {self.state.name} | Plantilla: {self.current_template_name.upper()} | "
+            f"Zona: {zone_str}\n"
+            f"  > Requisitos ({req_status}): {req_str}\n"
+            f"  > Construyendo: {build_status}"
+        )
+        
+        self.logger.info(f"Comando 'status' recibido. Reportando: {self.state.name}")
+        try: self.mc.postToChat(status_message)
+        except Exception: pass
+
+
     async def _handle_message(self, message: Dict[str, Any]):
         msg_type = message.get("type")
         payload = message.get("payload", {})
@@ -319,7 +354,11 @@ class BuilderBot(BaseAgent):
                     self.logger.info(f"Comando 'bom' recibido. Reenviando BOM: {req_str}")
                     self.mc.postToChat(f"[Builder]  BOM reenviado. Requisitos: {req_str}")
                     # --- FIN MEJORA ---
-
+            
+            elif command == 'status':
+                # --- NUEVA LÓGICA DE STATUS ---
+                await self._publish_status()
+                # ------------------------------
 
         elif msg_type == "map.v1":
             # --- RECEPCIÓN DEL MAPA Y DECISIÓN AUTOMÁTICA ---
