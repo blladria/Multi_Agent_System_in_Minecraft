@@ -284,14 +284,14 @@ class ExplorerBot(BaseAgent):
 
                 # --- MEJORA DE FEEDBACK ---
                 self.logger.info(f"Comando 'start' recibido. Iniciando exploración.")
-                self.mc.postToChat(f"[Explorer] 🗺️ Exploración iniciada en ({int(self.exploration_position.x)}, {int(self.exploration_position.z)}), rango: {self.exploration_size}x{self.exploration_size}. Estado: RUNNING.")
+                self.mc.postToChat(f"[Explorer] Exploración iniciada en ({int(self.exploration_position.x)}, {int(self.exploration_position.z)}), rango: {self.exploration_size}x{self.exploration_size}. Estado: RUNNING.")
                 # --- FIN MEJORA ---
             
             elif command == 'stop': 
                 self.handle_stop()
                 # --- MEJORA DE FEEDBACK ---
                 self.logger.info(f"Comando 'stop' recibido. Exploración detenida y estado guardado.")
-                self.mc.postToChat(f"[Explorer] 🛑 Exploración detenida. Estado: STOPPED.")
+                self.mc.postToChat(f"[Explorer] Exploración detenida. Estado: STOPPED.")
                 self._clear_marker() # Aseguramos que el marcador desaparezca
                 # --- FIN MEJORA ---
 
@@ -313,11 +313,11 @@ class ExplorerBot(BaseAgent):
                             
                             # --- MEJORA DE FEEDBACK ---
                             self.logger.info(f"Comando 'set range' recibido. Nuevo rango: {new_range}.")
-                            self.mc.postToChat(f"[Explorer] 📏 Rango de exploración cambiado a: {new_range}x{new_range}.")
+                            self.mc.postToChat(f"[Explorer] Rango de exploración cambiado a: {new_range}x{new_range}.")
                             # --- FIN MEJORA ---
                         
                     except ValueError:
-                        self.mc.postToChat(f"[Explorer] ❌ Error: El rango '{arg_map['range']}' debe ser un número entero.")
+                        self.mc.postToChat(f"[Explorer] Error: El rango '{arg_map['range']}' debe ser un número entero.")
                     except Exception as e:
                          self.logger.error(f"Error al cambiar rango: {e}")
             
@@ -327,12 +327,12 @@ class ExplorerBot(BaseAgent):
             elif command == 'pause':
                 self.handle_pause()
                 self.logger.info(f"Comando 'pause' recibido. Estado: PAUSED.")
-                self.mc.postToChat(f"[Explorer] ⏸️ Pausado. Estado: PAUSED.")
+                self.mc.postToChat(f"[Explorer]  Pausado. Estado: PAUSED.")
                 
             elif command == 'resume':
                 self.handle_resume()
                 self.logger.info(f"Comando 'resume' recibido. Estado: RUNNING.")
-                self.mc.postToChat(f"[Explorer] ▶️ Reanudado. Estado: RUNNING.")
+                self.mc.postToChat(f"[Explorer]  Reanudado. Estado: RUNNING.")
 
 
     def _parse_start_params(self, params: Dict[str, Any]):

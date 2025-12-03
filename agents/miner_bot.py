@@ -243,7 +243,7 @@ class MinerBot(BaseAgent):
         self._mining_offset += 1 
         self.logger.info("Ciclo minería completado.")
         # --- MEJORA DE FEEDBACK ---
-        self.mc.postToChat(f"[Miner] ✅ Ciclo de minería completado. Requisitos cubiertos.")
+        self.mc.postToChat(f"[Miner]  Ciclo de minería completado. Requisitos cubiertos.")
         # --- FIN MEJORA ---
     
     # --- MÉTODO PARA REINICIAR LA TAREA (FIX RE-EJECUCIÓN) ---
@@ -305,23 +305,23 @@ class MinerBot(BaseAgent):
                 # --- MEJORA DE FEEDBACK (set strategy) ---
                 if self.current_strategy_name in self.strategy_classes:
                     self.logger.info(f"Comando 'set strategy' recibido. Estrategia cambiada a: {self.current_strategy_name}.")
-                    self.mc.postToChat(f"[Miner] ⚙️ Estrategia cambiada a: {self.current_strategy_name.upper()}.")
+                    self.mc.postToChat(f"[Miner]  Estrategia cambiada a: {self.current_strategy_name.upper()}.")
                 # --- FIN MEJORA ---
 
             elif command == 'pause':
                 self.handle_pause()
                 self.logger.info(f"Comando 'pause' recibido. Estado: PAUSED.")
-                self.mc.postToChat(f"[Miner] ⏸️ Pausado. Estado: PAUSED.")
+                self.mc.postToChat(f"[Miner]  Pausado. Estado: PAUSED.")
                 
             elif command == 'resume':
                 self.handle_resume()
                 self.logger.info(f"Comando 'resume' recibido. Estado: RUNNING.")
-                self.mc.postToChat(f"[Miner] ▶️ Reanudado. Estado: RUNNING.")
+                self.mc.postToChat(f"[Miner]  Reanudado. Estado: RUNNING.")
 
             elif command == 'stop':
                 self.handle_stop()
                 self.logger.info(f"Comando 'stop' recibido. Minería detenida y locks liberados.")
-                self.mc.postToChat(f"[Miner] 🛑 Detenido. Locks liberados. Estado: STOPPED.")
+                self.mc.postToChat(f"[Miner]  Detenido. Locks liberados. Estado: STOPPED.")
                 self._clear_marker()
 
             elif command == 'status':

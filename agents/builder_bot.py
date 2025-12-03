@@ -230,7 +230,7 @@ class BuilderBot(BaseAgent):
                     block_id = MATERIAL_MAP.get(material_key, block.COBBLESTONE.id)
                 else:
                     self.logger.error(f"¡Material '{material_key}' agotado a mitad de obra! Pasando a WAITING.")
-                    self.mc.postToChat(f"[Builder] ⚠️ Material '{material_key}' agotado. Pausando construcción. Estado: WAITING.") # Nuevo mensaje de alerta
+                    self.mc.postToChat(f"[Builder]  Material '{material_key}' agotado. Pausando construcción. Estado: WAITING.") # Nuevo mensaje de alerta
                     self.is_building = False
                     self.state = AgentState.WAITING 
                     return
@@ -247,7 +247,7 @@ class BuilderBot(BaseAgent):
 
             except Exception as e:
                 self.logger.error(f"Error poniendo bloque: {e}")
-                self.mc.postToChat(f"[Builder] ❌ ERROR fatal al construir. Estado: ERROR.") # Nuevo mensaje de error
+                self.mc.postToChat(f"[Builder]  ERROR fatal al construir. Estado: ERROR.") # Nuevo mensaje de error
                 self.is_building = False
                 self.state = AgentState.ERROR
                 return
@@ -266,10 +266,10 @@ class BuilderBot(BaseAgent):
             if command == 'build':
                 # --- MEJORA DE FEEDBACK ---
                 if self.state == AgentState.WAITING:
-                     self.mc.postToChat(f"[Builder] 🚧 Recibido 'build', esperando materiales. Estado: WAITING.")
+                     self.mc.postToChat(f"[Builder]  Recibido 'build', esperando materiales. Estado: WAITING.")
                 self.state = AgentState.RUNNING
                 self.logger.info(f"Comando 'build' recibido. Iniciando ciclo de construcción.")
-                self.mc.postToChat(f"[Builder] 🏗️ Iniciando construcción de '{self.current_template_name}'.")
+                self.mc.postToChat(f"[Builder]  Iniciando construcción de '{self.current_template_name}'.")
                 # --- FIN MEJORA ---
             
             # --- COMANDO MANUAL DE CAMBIO DE PLAN ---
@@ -283,7 +283,7 @@ class BuilderBot(BaseAgent):
                         
                         # --- MEJORA DE FEEDBACK ---
                         self.logger.info(f"Comando 'plan set' recibido. Plantilla cambiada a: {template_name}")
-                        self.mc.postToChat(f"[Builder] 📝 Plantilla cambiada a: '{template_name}'. Calculando BOM...")
+                        self.mc.postToChat(f"[Builder]  Plantilla cambiada a: '{template_name}'. Calculando BOM...")
                         # --- FIN MEJORA ---
                         
                         # Si ya tenemos zona, actualizar BOM al instante
@@ -291,24 +291,24 @@ class BuilderBot(BaseAgent):
                             self.required_bom = self._calculate_bom_for_structure()
                             await self._publish_requirements_to_miner()
                     else:
-                        self.mc.postToChat(f"[Builder] ❌ No conozco la plantilla '{template_name}'.")
+                        self.mc.postToChat(f"[Builder]  No conozco la plantilla '{template_name}'.")
                 elif len(args) >= 1 and args[0] == 'list':
                      self.mc.postToChat(f"[Builder] Plantillas disponibles: {list(BUILDING_TEMPLATES.keys())}")
             
             elif command == 'pause': 
                 self.handle_pause()
                 self.logger.info(f"Comando 'pause' recibido. Estado: PAUSED.")
-                self.mc.postToChat(f"[Builder] ⏸️ Pausado. Estado: PAUSED.")
+                self.mc.postToChat(f"[Builder]  Pausado. Estado: PAUSED.")
                 
             elif command == 'resume': 
                 self.handle_resume()
                 self.logger.info(f"Comando 'resume' recibido. Estado: RUNNING.")
-                self.mc.postToChat(f"[Builder] ▶️ Reanudado. Estado: RUNNING.")
+                self.mc.postToChat(f"[Builder]  Reanudado. Estado: RUNNING.")
 
             elif command == 'stop': 
                 self.handle_stop()
                 self.logger.info(f"Comando 'stop' recibido. Construcción detenida.")
-                self.mc.postToChat(f"[Builder] 🛑 Detenido. Estado: STOPPED.")
+                self.mc.postToChat(f"[Builder]  Detenido. Estado: STOPPED.")
                 self._clear_marker()
 
             elif command == 'bom':
@@ -317,7 +317,7 @@ class BuilderBot(BaseAgent):
                     # --- MEJORA DE FEEDBACK ---
                     req_str = ", ".join([f"{q} {m}" for m, q in self.required_bom.items()])
                     self.logger.info(f"Comando 'bom' recibido. Reenviando BOM: {req_str}")
-                    self.mc.postToChat(f"[Builder] 🧾 BOM reenviado. Requisitos: {req_str}")
+                    self.mc.postToChat(f"[Builder]  BOM reenviado. Requisitos: {req_str}")
                     # --- FIN MEJORA ---
 
 
@@ -339,7 +339,7 @@ class BuilderBot(BaseAgent):
                 self.current_template_name = suggested
                 self.current_design = BUILDING_TEMPLATES[suggested]
                 self.logger.info(f"Aceptando sugerencia del Explorer: {suggested} (Var: {terrain_var:.2f})")
-                self.mc.postToChat(f"[Builder] ✅ Acepto sugerencia: '{suggested}'.")
+                self.mc.postToChat(f"[Builder]  Acepto sugerencia: '{suggested}'.")
             
             # Calcular BOM y pedir materiales
             self.required_bom = self._calculate_bom_for_structure() 
@@ -360,7 +360,7 @@ class BuilderBot(BaseAgent):
             
             if self.state == AgentState.WAITING and self._check_inventory():
                 self.state = AgentState.RUNNING
-                self.mc.postToChat(f"[Builder] 🎉 Materiales recibidos. Iniciando construcción. Estado: RUNNING.")
+                self.mc.postToChat(f"[Builder]  Materiales recibidos. Iniciando construcción. Estado: RUNNING.")
                 
     async def _publish_requirements_to_miner(self):
         requirements_message = {
@@ -386,4 +386,4 @@ class BuilderBot(BaseAgent):
         }
         await self.broker.publish(build_message)
         self.logger.info("Construcción completada publicada.")
-        self.mc.postToChat(f"[Builder] 🏰 Construcción de '{self.current_template_name}' finalizada con éxito.")
+        self.mc.postToChat(f"[Builder]  Construcción de '{self.current_template_name}' finalizada con éxito.")
