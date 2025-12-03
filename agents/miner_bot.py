@@ -70,9 +70,8 @@ class MinerBot(BaseAgent):
         InitialStrategy = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
         self.current_strategy_instance = InitialStrategy(self.mc, self.logger)
         
-        # --- MODIFICACIÓN: Flag para indicar si el usuario ha forzado una estrategia ---
+        # Flag para indicar si el usuario ha forzado una estrategia
         self.manual_strategy_active = False
-        # -----------------------------------------------------------------------------
         
         self.logger.info(f"MinerBot: Estrategias descubiertas: {list(self.strategy_classes.keys())}. Inicial: {self.current_strategy_name}")
         
@@ -282,18 +281,22 @@ class MinerBot(BaseAgent):
     
     # --- MÉTODOS DE MANEJO DE ESTADO Y COMANDOS ---
 
-    def _reset_mining_task(self, reset_requirements: bool = True):
+    def _reset_mining_task(self, reset_requirements: bool = True, reset_inventory: bool = True):
         """
         Reinicia el inventario y estado para una nueva tarea manual.
-        Si reset_requirements es False, MANTIENE los requisitos cargados (para 'fulfill').
+        Si reset_requirements es False, MANTIENE los requisitos cargados (para 'fulfill' o cambio de estrategia).
+        Si reset_inventory es False, MANTIENE el inventario actual.
         """
         if self.mining_sector_locked:
             self.release_locks() 
             
         if reset_requirements:
              self.requirements = {}
-             
-        self.inventory = {mat: 0 for mat in MATERIAL_MAP.keys()}
+        
+        # Reinicio condicional del inventario
+        if reset_inventory:
+            self.inventory = {mat: 0 for mat in MATERIAL_MAP.keys()}
+            
         self._mining_offset = 0 # Reiniciar offset para empezar desde la base
         self.state = AgentState.IDLE
         self.mining_sector_locked = False
@@ -304,7 +307,7 @@ class MinerBot(BaseAgent):
         StrategyClass = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
         self.current_strategy_instance = StrategyClass(self.mc, self.logger)
 
-        self.logger.info("Tarea de mineria reseteada para nueva ejecucion.")
+        self.logger.info(f"Tarea de mineria reseteada. Req: {not reset_requirements}, Inv: {not reset_inventory}")
 
     async def _handle_message(self, message: Dict[str, Any]):
         msg_type = message.get("type")
@@ -319,7 +322,6 @@ class MinerBot(BaseAgent):
                  await asyncio.sleep(0.5) 
 
                  # --- VALIDACIÓN DE DEPENDENCIA: BUILDER BOT ---
-                 # Requerimos que previamente se hayan cargado los requisitos (vía /builder bom)
                  if not self.requirements:
                      self.logger.warning("INTENTO FALLIDO: /miner fulfill llamado sin BOM previo del BuilderBot.")
                      self.mc.postToChat("[Miner] ERROR: No he recibido la lista de materiales del Builder.")
@@ -327,13 +329,11 @@ class MinerBot(BaseAgent):
                      return
                  # -----------------------------------------------
                  
-                 # Si hay requisitos, los mantenemos y reseteamos el resto (inventario/estado)
-                 self._reset_mining_task(reset_requirements=False) 
+                 # Si hay requisitos, los mantenemos y reseteamos el resto. Inventario se limpia (nueva tarea).
+                 self._reset_mining_task(reset_requirements=False, reset_inventory=True) 
                  self._parse_start_params(params)
                  
-                 # --- MODIFICACIÓN: Reactivar IA automática al iniciar tarea nueva ---
                  self.manual_strategy_active = False 
-                 # ------------------------------------------------------------------
 
                  req_str = ", ".join([f"{q} {m}" for m, q in self.requirements.items()])
                  self.logger.info(f"Comando 'fulfill' recibido: Leyendo BOM del Builder. Objetivo: {req_str}")
@@ -348,12 +348,10 @@ class MinerBot(BaseAgent):
                  
             elif command == 'start':
                 # 'start' resetea todo por si el usuario quiere una tarea nueva manual
-                self._reset_mining_task(reset_requirements=True) 
+                self._reset_mining_task(reset_requirements=True, reset_inventory=True) 
                 self._parse_start_params(params)
                 
-                # --- MODIFICACIÓN: Reactivar IA automática al iniciar tarea nueva ---
                 self.manual_strategy_active = False 
-                # ------------------------------------------------------------------
 
                 if not self.requirements:
                     # TAREA POR DEFECTO: 40 Dirt y 40 Cobblestone
@@ -386,18 +384,15 @@ class MinerBot(BaseAgent):
                 if self.current_strategy_name in self.strategy_classes:
                     self.mc.postToChat(f"[Miner] Estrategia cambiada de {old_strategy_name.upper()} a: {self.current_strategy_name.upper()}.")
                     
-                    # --- MODIFICACIÓN: Activar modo manual para evitar override adaptativo ---
                     self.manual_strategy_active = True
                     self.logger.info(f"Modo de estrategia manual activado: {self.current_strategy_name}")
-                    # -------------------------------------------------------------------------
                     
                     if self.state == AgentState.RUNNING and old_strategy_name != self.current_strategy_name:
-                         # Reiniciamos la tarea interna (offsets, etc) pero MANTENIENDO el inventario
-                         self._reset_mining_task(reset_requirements=False) 
+                         # --- RESETEA INVENTARIO (reset_inventory=True) como se pidió en el requerimiento ---
+                         self._reset_mining_task(reset_requirements=False, reset_inventory=True) 
                          
-                         # Aseguramos que la instancia se actualizó en _reset_mining_task basado en el nombre actualizado
                          self.state = AgentState.RUNNING 
-                         self.logger.info("Tarea de minería reiniciada para aplicar la nueva estrategia en caliente.")
+                         self.logger.info("Tarea de minería reiniciada para aplicar la nueva estrategia.")
 
             elif command == 'pause':
                 self.handle_pause()
@@ -429,7 +424,6 @@ class MinerBot(BaseAgent):
                  self.logger.info(f"Nuevos requisitos cargados: {self.requirements}")
             
             # Solo iniciar si el status es PENDING (flujo automático). 
-            # Si es ACKNOWLEDGED (flujo manual via /builder bom), solo carga datos y espera /miner fulfill.
             if message.get("status") == "PENDING":
                 ctx_zone = message.get("context", {}).get("target_zone")
                 if ctx_zone:
@@ -520,15 +514,26 @@ class MinerBot(BaseAgent):
                 self.logger.info(f"Estrategia manual: {strat}")
 
     async def _select_adaptive_strategy(self):
-        # --- MODIFICACIÓN: Si el usuario forzó una estrategia, ignoramos la adaptación ---
-        if self.manual_strategy_active:
-            return
-        # ---------------------------------------------------------------------------------
-
+        # Calcular materiales pendientes para la lógica de switching
         if not self.requirements: return 
-
         pending = {m: q - self.inventory.get(m, 0) for m, q in self.requirements.items() if q > self.inventory.get(m, 0)}
         if not pending: return 
+
+        # --- LÓGICA DE SWITCHING AUTOMÁTICO DESDE MANUAL (VERTICAL -> GRID) ---
+        # Si el usuario puso manual VERTICAL, pero ya no hace falta piedra y SÍ tierra/arena...
+        if self.manual_strategy_active and self.current_strategy_name == 'vertical':
+             needs_dirt_sand = pending.get("dirt", 0) > 0 or pending.get("sand", 0) > 0
+             needs_stone = any(pending.get(mat, 0) > 0 for mat in ["cobblestone", "stone"])
+             
+             # Si no necesitamos piedra pero si tierra, desbloqueamos el manual para que la IA actúe
+             if needs_dirt_sand and not needs_stone:
+                 self.logger.info("Modo Manual 'Vertical' ineficaz (Piedra completa, falta Tierra). Pasando a Auto.")
+                 self.manual_strategy_active = False # Quitamos el lock manual
+                 self.mc.postToChat("[Miner] Auto-switching: Vertical -> Grid (Piedra completada).")
+
+        # Si el usuario forzó una estrategia (y no se ha desbloqueado arriba), ignoramos la adaptación
+        if self.manual_strategy_active:
+            return
 
         new_strat = self.current_strategy_name 
 
