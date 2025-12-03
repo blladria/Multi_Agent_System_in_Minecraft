@@ -22,6 +22,7 @@ CONTEXT_SCHEMA = {
         "task_id": {"type": "string"},
         "state": {"type": "string", "enum": ["RUNNING", "PAUSED", "WAITING", "STOPPED"]},
         "correlation_id": {"type": "string"},
+        "locked_sector": {"type": "string", "description": "Coordenadas del sector bloqueado."}, # Nuevo
     },
     "additionalProperties": True,
 }
@@ -33,8 +34,9 @@ BASE_SCHEMA = {
     "properties": {
         # Campos Requeridos por el protocolo
         "type": {"type": "string", "description": "Categoría del mensaje (ej: inventory.v1)"},
+        # Añadir "All" como target para broadcasts [cite: 160]
         "source": {"type": "string", "enum": AGENT_IDENTIFIERS, "description": "Agente emisor"},
-        "target": {"type": "string", "enum": AGENT_IDENTIFIERS, "description": "Agente receptor"},
+        "target": {"type": "string", "enum": AGENT_IDENTIFIERS + ["All"], "description": "Agente receptor (o 'All')"}, 
         "timestamp": {"type": "string", "format": "date-time", "description": "Hora en formato ISO 8601 UTC"},
         "payload": {"type": "object", "description": "Datos estructurados relevantes al mensaje"},
         "status": {"type": "string", "enum": MESSAGE_STATUSES, "description": "Resultado del procesamiento del mensaje"},
@@ -58,7 +60,7 @@ MATERIALS_REQUIREMENTS_SCHEMA = dict(BASE_SCHEMA, **{
                 # REGLA: Todos los materiales listados deben ser enteros >= 1
                 "^.*$": {"type": "integer", "minimum": 1}
             },
-            # --- FIX CRÍTICO: Eliminamos 'required: ["cobblestone", "dirt"]' ---
+            # FIX CRÍTICO: Eliminamos 'required: ["cobblestone", "dirt"]'
             "required": [], 
             "additionalProperties": True
         }
@@ -96,8 +98,7 @@ MAP_SCHEMA = dict(BASE_SCHEMA, **{
                 "exploration_area": {"type": "string"}, # Coordenadas de la región explorada
                 "elevation_map": {"type": "array", "items": {"type": "number"}}, # Mapa de elevación
                 "optimal_zone": {"type": "object"}, # Zona plana identificada
-                # Estos campos (sugerencia y varianza) se añaden en el ExplorerBot, pero el esquema base de map.v1
-                # debe permitir la extensión con additionalProperties=True para que pasen, o se pueden añadir aquí:
+                # Estos campos (sugerencia y varianza) se añaden en el ExplorerBot
                 "suggested_template": {"type": "string"},
                 "terrain_variance": {"type": "number"}
             },
@@ -125,7 +126,7 @@ COMMAND_SCHEMA = dict(BASE_SCHEMA, **{
     })
 })
 
-# 5. Mensaje de Estado de Construcción (build.status.v1) - Necesario para cerrar el ciclo
+# 5. Mensaje de Estado de Construcción (build.status.v1)
 BUILD_STATUS_SCHEMA = dict(BASE_SCHEMA, **{
     "properties": dict(BASE_SCHEMA['properties'], **{
         "type": {"const": "build.status.v1"},
@@ -141,6 +142,27 @@ BUILD_STATUS_SCHEMA = dict(BASE_SCHEMA, **{
     })
 })
 
+# 6. Nuevo: Esquema para Bloqueo/Liberación Espacial (lock.spatial.v1 / unlock.spatial.v1) [cite: 170]
+SPATIAL_LOCK_SCHEMA = dict(BASE_SCHEMA, **{
+    "properties": dict(BASE_SCHEMA['properties'], **{
+        "type": {"enum": ["lock.spatial.v1", "unlock.spatial.v1"]},
+        "target": {"const": "All"}, # Siempre broadcast
+        "source": {"const": "MinerBot"}, # Solo el MinerBot puede bloquear sectores de minería
+        "payload": {
+            "type": "object",
+            "properties": {
+                "sector_id": {"type": "string", "description": "Identificador único de la zona (ej: X_Z)"},
+                "x": {"type": "number"},
+                "z": {"type": "number"},
+                "size": {"type": "number"},
+            },
+            "required": ["sector_id", "x", "z", "size"],
+            "additionalProperties": False
+        },
+        "status": {"const": "SUCCESS"}
+    })
+})
+
 
 # Diccionario final de esquemas para la función de validación
 MESSAGE_SCHEMAS = {
@@ -148,7 +170,9 @@ MESSAGE_SCHEMAS = {
     "inventory.v1": INVENTORY_SCHEMA,
     "map.v1": MAP_SCHEMA,
     "command": COMMAND_SCHEMA,
-    "build.status.v1": BUILD_STATUS_SCHEMA # Añadido el esquema de estado de construcción
+    "build.status.v1": BUILD_STATUS_SCHEMA,
+    "lock.spatial.v1": SPATIAL_LOCK_SCHEMA,      # Nuevo
+    "unlock.spatial.v1": SPATIAL_LOCK_SCHEMA     # Nuevo
 }
 
 
@@ -163,6 +187,9 @@ def validate_message(message: dict) -> bool:
     # 1. Determinar el esquema a usar
     if message_type.startswith("command."):
         schema = MESSAGE_SCHEMAS["command"]
+    # Manejar los nuevos tipos de bloqueo/desbloqueo
+    elif message_type in ["lock.spatial.v1", "unlock.spatial.v1"]:
+         schema = MESSAGE_SCHEMAS[message_type]
     elif message_type in MESSAGE_SCHEMAS:
         schema = MESSAGE_SCHEMAS[message_type]
     else:

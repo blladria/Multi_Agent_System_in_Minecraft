@@ -32,6 +32,9 @@ class MinerBot(BaseAgent):
     """
     Agente MinerBot: Extrae recursos usando estrategias adaptativas.
     """
+    # Constante para definir el tamaño de la región que bloquea (ej: 10x10)
+    SECTOR_SIZE = 10 
+    
     def __init__(self, agent_id: str, mc_connection, message_broker):
         super().__init__(agent_id, mc_connection, message_broker)
         
@@ -41,6 +44,7 @@ class MinerBot(BaseAgent):
         # Posición de trabajo (se actualiza dinámicamente)
         self.mining_position: Vec3 = Vec3(10, 65, 10)
         self.mining_sector_locked = False 
+        self.locked_sector_id: str = "" # Identificador del sector bloqueado (ej: 10_10)
         
         # Offset para no minar siempre en el mismo hueco
         self._mining_offset: int = 0
@@ -67,7 +71,7 @@ class MinerBot(BaseAgent):
         if not self.requirements: return False
         return all(self.inventory.get(mat, 0) >= qty for mat, qty in self.requirements.items())
 
-    # --- LÓGICA DE EXTRACCIÓN FÍSICA ---
+    # --- LÓGICA DE EXTRACCIÓN FÍSICA (No modificada) ---
     
     async def _mine_current_block(self, position: Vec3) -> bool:
         """
@@ -124,6 +128,7 @@ class MinerBot(BaseAgent):
             return True
         except: return False
 
+
     # --- CICLO DE VIDA ---
 
     async def perceive(self):
@@ -139,8 +144,9 @@ class MinerBot(BaseAgent):
             else:
                  await self._select_adaptive_strategy()
                  if not self.mining_sector_locked:
-                    self.mining_sector_locked = True
-
+                    # Nuevo: Adquirir el lock y notificar
+                    await self._acquire_lock()
+                    
     async def act(self):
         if self.state == AgentState.RUNNING and self.mining_sector_locked:
             
@@ -164,15 +170,66 @@ class MinerBot(BaseAgent):
             # 3. Publicar progreso
             await self._publish_inventory_update(status="PENDING")
             
-    # --- UTILS ---
+    # --- UTILS DE LOCKING ---
+    
+    def _calculate_sector_id(self, pos: Vec3) -> str:
+        """Calcula el ID del sector basado en la posición (ej: 10_10 para 10-19 en X y Z)."""
+        # Redondea hacia abajo al múltiplo más cercano del tamaño del sector
+        x_sector = int(pos.x // self.SECTOR_SIZE) * self.SECTOR_SIZE
+        z_sector = int(pos.z // self.SECTOR_SIZE) * self.SECTOR_SIZE
+        return f"{x_sector}_{z_sector}"
+
+    async def _acquire_lock(self):
+        """Adquiere el lock y notifica al sistema."""
+        self.mining_sector_locked = True
+        self.locked_sector_id = self._calculate_sector_id(self.mining_position)
+        
+        # Publicar el mensaje de bloqueo
+        await self._publish_lock_update(message_type="lock.spatial.v1")
+        self.logger.info(f"Lock adquirido: Sector {self.locked_sector_id}")
 
     def release_locks(self):
+        """
+        SOBRESCRIBE EL MÉTODO DE BASEAGENT.
+        Libera el lock localmente y notifica al sistema. (Llamado al entrar en STOPPED/ERROR).
+        """
         if self.mining_sector_locked:
-            self.mining_sector_locked = False
-            self.logger.info("Lock liberado.")
+            # Llama a la lógica de notificación asíncrona (no bloqueante)
+            # Como este método se llama desde el setter de 'state' (no asíncrono),
+            # usamos asyncio.create_task para ejecutar la publicación.
+            asyncio.create_task(self._publish_lock_update(message_type="unlock.spatial.v1"))
             
+            self.mining_sector_locked = False
+            self.locked_sector_id = ""
+            self.logger.info("Lock liberado.")
+        
+        super().release_locks() 
+        
+    async def _publish_lock_update(self, message_type: str):
+        """Publica el mensaje de bloqueo/desbloqueo al sistema (target: All)."""
+        sector_id = self._calculate_sector_id(self.mining_position)
+        
+        lock_message = {
+            "type": message_type,
+            "source": self.agent_id,
+            "target": "All", # Broadcast para que todos los MinerBots lo vean
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+            "payload": {
+                "sector_id": sector_id,
+                "x": self.mining_position.x,
+                "z": self.mining_position.z,
+                "size": self.SECTOR_SIZE,
+            },
+            "status": "SUCCESS",
+            "context": {"locked_sector": sector_id}
+        }
+        await self.broker.publish(lock_message)
+        self.logger.info(f"Publicado: {message_type} para sector {sector_id}")
+
+
     async def _complete_mining_cycle(self):
         await self._publish_inventory_update(status="SUCCESS")
+        # Nuevo: Liberar el lock al completar el ciclo
         self.release_locks()
         self._mining_offset += 1 
         self.logger.info("Ciclo minería completado.")
@@ -180,11 +237,16 @@ class MinerBot(BaseAgent):
     # --- MÉTODO PARA REINICIAR LA TAREA (FIX RE-EJECUCIÓN) ---
     def _reset_mining_task(self):
         """Reinicia el inventario y requisitos para una nueva tarea manual."""
+        # FIX: Asegurar que el lock se libera en el sistema al resetear
+        if self.mining_sector_locked:
+            self.release_locks() 
+            
         self.requirements = {}
         self.inventory = {mat: 0 for mat in MATERIAL_MAP.keys()}
         self._mining_offset = 0 # Reiniciar offset para empezar desde la base
         self.state = AgentState.IDLE
         self.mining_sector_locked = False
+        self.locked_sector_id = ""
         # Forzar la recreación de la instancia de la estrategia
         self.current_strategy_instance = self.strategy_classes[self.current_strategy_name](self.mc, self.logger)
         self.logger.info("Tarea de minería reseteada para nueva ejecución.")
@@ -230,7 +292,8 @@ class MinerBot(BaseAgent):
             ctx_zone = message.get("context", {}).get("target_zone")
             if ctx_zone:
                  bx, bz = int(ctx_zone['x']), int(ctx_zone['z'])
-                 offset = 15 + (self._mining_offset * 10) 
+                 # El offset asegura que el minero se va a otro sector, lejos del BuilderBot
+                 offset = 15 + (self._mining_offset * self.SECTOR_SIZE * 2) 
                  
                  self.mining_position.x = bx + offset
                  self.mining_position.z = bz + offset
@@ -254,6 +317,23 @@ class MinerBot(BaseAgent):
             
             if self.state in (AgentState.IDLE, AgentState.WAITING): 
                 self.state = AgentState.RUNNING
+
+        elif msg_type == "lock.spatial.v1":
+            # Nuevo: Escuchar si OTROS MinerBots bloquean un sector
+            sector_id = payload.get("sector_id")
+            source = message.get("source")
+            
+            if source != self.agent_id:
+                self.logger.warning(f"Sector {sector_id} BLOQUEADO por {source}.")
+                # Lógica de reubicación compleja (opcional) iría aquí.
+        
+        elif msg_type == "unlock.spatial.v1":
+             # Nuevo: Escuchar si OTROS MinerBots liberan un sector
+             sector_id = payload.get("sector_id")
+             source = message.get("source")
+             if source != self.agent_id:
+                 self.logger.warning(f"Sector {sector_id} LIBERADO por {source}.")
+
 
     def _parse_start_params(self, params: Dict[str, Any]):
         args = params.get('args', [])

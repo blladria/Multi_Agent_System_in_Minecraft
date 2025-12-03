@@ -291,6 +291,14 @@ class ExplorerBot(BaseAgent):
             
             elif command == 'stop': 
                 self.handle_stop()
+                # <<<<<<<<<<<<<<< INICIO DE MODIFICACIÓN >>>>>>>>>>>>>>>
+                try:
+                    # Mensaje de confirmación de parada al chat
+                    self.mc.postToChat(f"[{self.agent_id}] Exploración detenida y estado guardado.")
+                except Exception:
+                    pass
+                # <<<<<<<<<<<<<<< FIN DE MODIFICACIÓN >>>>>>>>>>>>>>>
+            
             elif command == 'pause': 
                 self.handle_pause()
             elif command == 'resume': 
