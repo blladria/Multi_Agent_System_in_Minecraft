@@ -269,16 +269,25 @@ class ExplorerBot(BaseAgent):
         """Maneja los comandos entrantes."""
         msg_type = message.get("type")
         payload = message.get("payload", {})
+        args = payload.get("parameters", {}).get('args', [])
 
         if msg_type.startswith("command."):
             command = payload.get("command_name")
             params = payload.get("parameters", {})
-            args = params.get('args', [])
-
+            
             if command == 'start':
+                # FIX 1: Confirmación de rango por defecto
+                
+                # Verifica si el argumento 'range=' fue proporcionado
+                range_provided = any(arg.startswith('range=') for arg in args) 
+                
                 self._parse_start_params(params)
                 self.map_data = {} # Resetear memoria anterior
                 self.state = AgentState.RUNNING
+
+                # Si el rango NO fue proporcionado, se usó el valor por defecto (o el último valor, que por defecto es 30)
+                if not range_provided:
+                    self.mc.postToChat(f"[Explorer] Iniciando exploración en ({int(self.exploration_position.x)}, {int(self.exploration_position.z)}) con rango por defecto: {self.exploration_size}x{self.exploration_size}.")
             
             elif command == 'stop': 
                 self.handle_stop()
@@ -288,15 +297,25 @@ class ExplorerBot(BaseAgent):
                 self.handle_resume()
             
             elif command == 'set':
-                # Permite cambiar el tamaño: /explorer set range=50
+                # Permite cambiar el tamaño: /explorer set range=<int>
                 arg_map = {}
                 for arg in args:
                     if '=' in arg:
                         key, val = arg.split('=', 1)
                         arg_map[key] = val
                 if 'range' in arg_map:
-                    try: self.exploration_size = int(arg_map['range'])
-                    except: pass
+                    try: 
+                        new_range = int(arg_map['range'])
+                        
+                        # FIX 2: Confirmación de cambio de rango
+                        if new_range != self.exploration_size:
+                            self.exploration_size = new_range
+                            self.mc.postToChat(f"[Explorer] Rango de exploración cambiado a: {new_range}x{new_range}.")
+                        
+                    except ValueError:
+                        self.mc.postToChat(f"[Explorer] Error: El rango '{arg_map['range']}' debe ser un número entero.")
+                    except Exception:
+                         pass
             
             elif command == 'status':
                 await self._publish_status()
@@ -305,6 +324,7 @@ class ExplorerBot(BaseAgent):
     def _parse_start_params(self, params: Dict[str, Any]):
         """Lee coordenadas y rango del comando de inicio."""
         args = params.get('args', [])
+        # new_size conserva el valor actual/por defecto (30) si no se especifica
         new_size = self.exploration_size if self.exploration_size > 0 else 30 
         new_x, new_z = None, None
         
@@ -343,7 +363,7 @@ class ExplorerBot(BaseAgent):
         status_message = (
             f"[{self.agent_id}] Estado: {self.state.name} | "
             f"Zona: ({int(self.exploration_position.x)}, {int(self.exploration_position.z)}) | "
-            f"Tamaño: {self.exploration_size}"
+            f"Tamaño: {self.exploration_size}x{self.exploration_size}"
         )
         try: self.mc.postToChat(status_message)
         except: pass
