@@ -7,6 +7,7 @@ import os
 import logging.handlers
 from datetime import datetime
 import pkgutil
+from typing import Dict
 from mcpi.minecraft import Minecraft
 from core.message_broker import MessageBroker
 from agents.base_agent import BaseAgent, AgentState 
@@ -167,6 +168,13 @@ class AgentManager:
         if not parts: return
             
         command_root = parts[0] # Ej: 'agent', 'miner', 'explorer'
+        
+        # Parsear argumentos clave=valor
+        arg_map = {}
+        for arg in parts[2:]:
+            if '=' in arg:
+                key, val = arg.split('=', 1)
+                arg_map[key] = val
 
         # 1. Comandos Generales (Broadcast)
         if command_root == 'agent' and len(parts) > 1:
@@ -188,14 +196,19 @@ class AgentManager:
             elif subcommand == 'help':
                 self.mc.postToChat("Manager: agent [status|pause|resume|stop]")
                 self.mc.postToChat("Agentes: <Nombre> <comando> (ej: explorer start x=10 z=10)")
+        
+        # 2. Comando Workflow (Orquestación)
+        elif command_root == 'workflow' and len(parts) > 1 and parts[1].lower() == 'run':
+            await self._execute_workflow_run(arg_map)
             
-        # 2. Comandos Específicos (Unicast)
+        # 3. Comandos Específicos (Unicast)
         elif command_root.capitalize() + 'Bot' in self.agents:
             target_agent_id = command_root.capitalize() + 'Bot'
             if len(parts) < 2:
                 self.mc.postToChat(f"Faltan argumentos para {target_agent_id}")
                 return
 
+            # Mantener la estructura original para el envío
             control_msg = {
                 "type": "command.control.v1",
                 "source": "Manager",
@@ -212,7 +225,76 @@ class AgentManager:
         else:
             # Comando desconocido
             pass
-    
+            
+    async def _execute_workflow_run(self, arg_map: Dict[str, str]):
+        """
+        Maneja el comando '/workflow run' orquestando la secuencia de agentes.
+        1. Inicia ExplorerBot.
+        2. Configura BuilderBot y MinerBot si se pasan parámetros.
+        """
+        self.logger.info(f"Iniciando workflow run con parámetros: {arg_map}")
+        self.mc.postToChat("Manager: Iniciando Workflow Run (Exploración -> Minería -> Construcción).")
+        timestamp = datetime.utcnow().isoformat() + 'Z'
+        
+        # 1. Configurar BuilderBot: Plantilla (template)
+        if 'template' in arg_map and 'BuilderBot' in self.agents:
+            template_name = arg_map['template']
+            # Enviar comando 'plan set <template>'
+            plan_msg = {
+                "type": "command.control.v1", "source": "Manager", "target": "BuilderBot", "timestamp": timestamp,
+                "payload": {"command_name": "plan", "parameters": {"args": ["set", template_name]}},
+                "status": "PENDING",
+            }
+            await self.broker.publish(plan_msg)
+            self.logger.info(f"Configurado BuilderBot con plantilla: {template_name}")
+            
+        # 2. Configurar MinerBot: Posición y Estrategia
+        miner_args = []
+        if 'miner.strategy' in arg_map and 'MinerBot' in self.agents:
+            strategy = arg_map['miner.strategy']
+            # Enviar comando 'set strategy <strategy>'
+            strat_msg = {
+                "type": "command.control.v1", "source": "Manager", "target": "MinerBot", "timestamp": timestamp,
+                "payload": {"command_name": "set", "parameters": {"args": ["strategy", strategy]}},
+                "status": "PENDING",
+            }
+            await self.broker.publish(strat_msg)
+            self.logger.info(f"Configurado MinerBot con estrategia: {strategy}")
+
+        if 'miner.x' in arg_map: miner_args.append(f"x={arg_map['miner.x']}")
+        if 'miner.y' in arg_map: miner_args.append(f"y={arg_map['miner.y']}")
+        if 'miner.z' in arg_map: miner_args.append(f"z={arg_map['miner.z']}")
+        
+        if miner_args:
+             # Enviar comando 'start' al MinerBot con la posición, si se especificó
+             miner_start_msg = {
+                "type": "command.control.v1", "source": "Manager", "target": "MinerBot", "timestamp": timestamp,
+                "payload": {"command_name": "start", "parameters": {"args": miner_args}},
+                "status": "PENDING",
+            }
+             await self.broker.publish(miner_start_msg)
+             self.logger.info("MinerBot posicionado.")
+
+
+        # 3. Iniciar ExplorerBot: Explora la zona (esto desencadena el resto del workflow)
+        if 'ExplorerBot' in self.agents:
+            explorer_args = []
+            if 'x' in arg_map: explorer_args.append(f"x={arg_map['x']}")
+            if 'z' in arg_map: explorer_args.append(f"z={arg_map['z']}")
+            if 'range' in arg_map: explorer_args.append(f"range={arg_map['range']}")
+            
+            # Enviar comando 'start' al ExplorerBot
+            explorer_start_msg = {
+                "type": "command.control.v1", "source": "Manager", "target": "ExplorerBot", "timestamp": timestamp,
+                "payload": {"command_name": "start", "parameters": {"args": explorer_args}},
+                "status": "PENDING",
+            }
+            await self.broker.publish(explorer_start_msg)
+            self.logger.info(f"ExplorerBot iniciado con args: {explorer_args}")
+        else:
+            self.mc.postToChat("Manager: ERROR - ExplorerBot no encontrado.")
+
+
     def _get_system_status(self):
         # Método auxiliar si se necesita status interno
         return {name: agent.state.name for name, agent in self.agents.items()}

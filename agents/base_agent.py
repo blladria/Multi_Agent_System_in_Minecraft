@@ -11,8 +11,31 @@ from mcpi.vec3 import Vec3
 # Importaciones para Checkpointing
 import json
 import os
+from functools import wraps # Importación para el decorador
 
 # La configuración de logging se gestiona de forma centralizada en main.py
+
+# --- DECORADOR DE PROGRAMACIÓN FUNCIONAL (Requisito 175) ---
+def log_execution_time(logger_instance, method_name):
+    """
+    Decorador que mide y loguea el tiempo de ejecución de una corrutina.
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(self, *args, **kwargs):
+            start_time = time.perf_counter()
+            try:
+                result = await func(self, *args, **kwargs)
+                return result
+            finally:
+                end_time = time.perf_counter()
+                elapsed = (end_time - start_time) * 1000 # en milisegundos
+                logger_instance.debug(
+                    f"FUNCTIONAL: {self.agent_id}.{method_name} ejecutado en {elapsed:.2f}ms"
+                )
+        return wrapper
+    return decorator
+# -------------------------------------------------------------
 
 class AgentState(Enum):
     """
@@ -124,16 +147,19 @@ class BaseAgent(ABC):
     # --- Métodos del Ciclo Perceive-Decide-Act (PDP) ---
 
     @abstractmethod
+    @log_execution_time(logging.getLogger(f"Agent.{{agent_id}}"), "perceive")
     async def perceive(self):
         """Observa el entorno y procesa mensajes."""
         pass
 
     @abstractmethod
+    @log_execution_time(logging.getLogger(f"Agent.{{agent_id}}"), "decide")
     async def decide(self):
         """Determina la siguiente acción."""
         pass
 
     @abstractmethod
+    @log_execution_time(logging.getLogger(f"Agent.{{agent_id}}"), "act")
     async def act(self):
         """Ejecuta la acción."""
         pass
