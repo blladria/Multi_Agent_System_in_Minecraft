@@ -3,15 +3,16 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, Callable, Type
+from functools import reduce  # NECESARIO PARA PROGRAMACIÓN FUNCIONAL
 from agents.base_agent import BaseAgent, AgentState
 from mcpi.vec3 import Vec3
 from mcpi import block
 
 # NUEVAS IMPORTACIONES PARA REFLEXIÓN
 from core.agent_manager import AgentDiscovery 
-from strategies.base_strategy import BaseMiningStrategy # Solo necesitamos la clase base para el tipado
+from strategies.base_strategy import BaseMiningStrategy 
 
-# IMPORTACIÓN DE FALLBACK: Necesaria para el caso de fallo de reflexión
+# IMPORTACIÓN DE FALLBACK
 from strategies.vertical_search import VerticalSearchStrategy 
 
 # Mapeo de materiales
@@ -32,8 +33,9 @@ MATERIAL_MAP = {
 class MinerBot(BaseAgent):
     """
     Agente MinerBot: Extrae recursos usando estrategias adaptativas.
+    Refactorizado para cumplir estrictamente con paradigmas funcionales (Map, Filter, Reduce).
     """
-    # Constante para definir el tamaño de la región que bloquea (ej: 10x10)
+    # Constante para definir el tamaño de la región que bloquea
     SECTOR_SIZE = 10 
     
     def __init__(self, agent_id: str, mc_connection, message_broker):
@@ -42,61 +44,49 @@ class MinerBot(BaseAgent):
         self.requirements: Dict[str, int] = {}
         self.inventory: Dict[str, int] = {mat: 0 for mat in MATERIAL_MAP.keys()}
         
-        # Posición de trabajo (se actualiza dinámicamente)
+        # Posición de trabajo
         self.mining_position: Vec3 = Vec3(10, 65, 10)
         self.mining_sector_locked = False 
-        self.locked_sector_id: str = "" # Identificador del sector bloqueado (ej: 10_10)
+        self.locked_sector_id: str = "" 
         
-        # Registro de locks de OTROS agentes. {sector_id: source_agent_id}
         self.remote_locks: Dict[str, str] = {}
-        
-        # Offset para no minar siempre en el mismo hueco
         self._mining_offset: int = 0
-        
-        # Almacena la altura Y fija del marcador visual en superficie
         self.surface_marker_y = 66 
         
-        # Contador para limitar la publicación de inventario
         self.inventory_publish_counter = 0 
-        self.publish_frequency = 5 # Publicar inventario cada 5 pasos de minería
+        self.publish_frequency = 5 
         
         # Estrategias Disponibles: DESCUBRIMIENTO DINÁMICO (Reflection)
         self.strategy_classes: Dict[str, Type[BaseMiningStrategy]] = AgentDiscovery.discover_strategies()
         
-        # Determinar estrategia inicial (usando 'vertical' como fallback de nombre)
         self.current_strategy_name = "vertical" 
-        
-        # Instanciar la estrategia (usando el tipo descubierto o VerticalSearchStrategy como fallback SEGURO)
         InitialStrategy = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
         self.current_strategy_instance = InitialStrategy(self.mc, self.logger)
         
-        # Flag para indicar si el usuario ha forzado una estrategia
         self.manual_strategy_active = False
         
         self.logger.info(f"MinerBot: Estrategias descubiertas: {list(self.strategy_classes.keys())}. Inicial: {self.current_strategy_name}")
-        
-        # Marcador Amarillo (Lana Amarilla = data 4)
         self._set_marker_properties(block.WOOL.id, 4)
 
     def get_total_volume(self) -> int:
-        return sum(self.inventory.values())
+        # FUNCIONAL: Uso de reduce para sumar valores
+        return reduce(lambda acc, qty: acc + qty, self.inventory.values(), 0)
 
     def _check_requirements_fulfilled(self) -> bool:
         if not self.requirements: return False
         
-        # Filtrar requisitos con cantidad pendiente > 0
-        pending_materials = {m: q - self.inventory.get(m, 0) for m, q in self.requirements.items() if q > self.inventory.get(m, 0)}
+        # FUNCIONAL: Uso de filter para encontrar materiales pendientes
+        pending_items = list(filter(
+            lambda item: item[1] > self.inventory.get(item[0], 0),
+            self.requirements.items()
+        ))
 
-        # Se retorna True si NO hay materiales pendientes
-        return not bool(pending_materials)
+        # Retorna True si la lista de pendientes está vacía
+        return len(pending_items) == 0
 
-    # --- LÓGICA DE EXTRACCIÓN FÍSICA (OPTIMIZADA) ---
+    # --- LÓGICA DE EXTRACCIÓN FÍSICA ---
     
     async def _mine_current_block(self, position: Vec3) -> bool:
-        """
-        Rompe el bloque en la posición dada y actualiza el inventario si es necesario.
-        Genera un mensaje de chat sobre el material recolectado.
-        """
         x, y, z = int(position.x), int(position.y), int(position.z)
         
         try:
@@ -106,9 +96,10 @@ class MinerBot(BaseAgent):
         if block_id == block.AIR.id:
             return False
 
-        # Identificar qué material obtenemos (DROP LOGIC)
+        # Identificar qué material obtenemos
         material_dropped = None
         
+        # Lógica imperativa simple para mapeos directos
         if block_id in [block.GRASS.id, block.DIRT.id]:
             material_dropped = "dirt" 
         elif block_id in [block.STONE.id, block.COBBLESTONE.id, block.MOSS_STONE.id]:
@@ -122,11 +113,13 @@ class MinerBot(BaseAgent):
         elif block_id in [block.WOOD.id, block.LEAVES.id]:
             material_dropped = "wood"
         else:
-             # Búsqueda inversa para Ores
-             for name, bid in MATERIAL_MAP.items():
-                 if bid == block_id: 
-                      material_dropped = name
-                      break
+             # FUNCIONAL: Búsqueda inversa usando filter y next
+             found = next(
+                 filter(lambda item: item[1] == block_id, MATERIAL_MAP.items()), 
+                 None
+             )
+             if found:
+                 material_dropped = found[0]
         
         # Verificar si lo necesitamos
         material_to_count = None
@@ -144,7 +137,6 @@ class MinerBot(BaseAgent):
                 self.inventory[material_to_count] += 1
                 req = self.requirements[material_to_count]
                 
-                # Feedback instantáneo al jugador sobre el material
                 self.logger.info(f"MINADO: {material_to_count} ({self.inventory[material_to_count]}/{req})")
                 self.mc.postToChat(f"[Miner] +1 {material_to_count.upper()} en ({x},{y},{z}). Progreso: {self.inventory[material_to_count]}/{req}.")
             
@@ -164,19 +156,14 @@ class MinerBot(BaseAgent):
             if self._check_requirements_fulfilled():
                 await self._complete_mining_cycle() 
                 self.state = AgentState.IDLE 
-                return # Detener el ciclo de decisión si la tarea ha terminado
+                return 
 
-            # 1. Adaptación de Estrategia
             await self._select_adaptive_strategy()
                  
-            # 2. Lógica de Bloqueo
             current_sector_id = self._calculate_sector_id(self.mining_position)
             
-            # Reubicación si el sector está bloqueado por otro
             if current_sector_id in self.remote_locks:
                 self.logger.warning(f"Sector {current_sector_id} bloqueado por {self.remote_locks[current_sector_id]}. Reubicando...")
-                
-                # Simple heurística de reubicación: mover 1 sector al Este
                 self.mining_position.x += self.SECTOR_SIZE
                 
                 try:
@@ -188,23 +175,19 @@ class MinerBot(BaseAgent):
                 
                 self.logger.info(f"Nueva posición de minería: ({int(self.mining_position.x)}, {int(self.mining_position.y)}, {int(self.mining_position.z)})")
                 await asyncio.sleep(0.5) 
-                return # Intentar adquirir el lock en el siguiente ciclo
+                return 
                  
-            # Adquisición de Lock si aún no está bloqueado
             if not self.mining_sector_locked:
                 await self._acquire_lock()
                     
     async def act(self):
         if self.state == AgentState.RUNNING and self.mining_sector_locked:
-            
-            # 1. VISUALIZACIÓN: Marcador siempre en la posición de superficie *fija*
             try:
                  x, z = int(self.mining_position.x), int(self.mining_position.z)
                  y_surf = self.surface_marker_y 
                  self._update_marker(Vec3(x, y_surf, z))
             except: pass
             
-            # 2. Ejecutar estrategia, que modificará la posición interna (Y)
             await self.current_strategy_instance.execute(
                 requirements=self.requirements,
                 inventory=self.inventory,
@@ -212,22 +195,19 @@ class MinerBot(BaseAgent):
                 mine_block_callback=self._mine_current_block 
             )
             
-            # 3. Publicar progreso
             self.inventory_publish_counter += 1
             if self.inventory_publish_counter >= self.publish_frequency:
                  await self._publish_inventory_update(status="PENDING")
-                 self.inventory_publish_counter = 0 # Reiniciar contador
+                 self.inventory_publish_counter = 0
             
     # --- UTILS DE LOCKING ---
     
     def _calculate_sector_id(self, pos: Vec3) -> str:
-        """Calcula el ID del sector basado en la posición (ej: 10_10 para 10-19 en X y Z)."""
         x_sector = int(pos.x // self.SECTOR_SIZE) * self.SECTOR_SIZE
         z_sector = int(pos.z // self.SECTOR_SIZE) * self.SECTOR_SIZE
         return f"{x_sector}_{z_sector}"
 
     async def _acquire_lock(self):
-        """Adquiere el lock y notifica al sistema."""
         self.mining_sector_locked = True
         self.locked_sector_id = self._calculate_sector_id(self.mining_position)
         
@@ -235,12 +215,7 @@ class MinerBot(BaseAgent):
         self.logger.info(f"Lock adquirido: Sector {self.locked_sector_id}")
 
     def release_locks(self):
-        """
-        SOBRESCRIBE EL MÉTODO DE BASEAGENT.
-        Libera el lock localmente y notifica al sistema. (Llamado al entrar en STOPPED/ERROR).
-        """
         if self.mining_sector_locked:
-            # Uso de create_task porque release_locks es llamado desde métodos síncronos
             asyncio.create_task(self._publish_lock_update(message_type="unlock.spatial.v1"))
             
             self.mining_sector_locked = False
@@ -250,7 +225,6 @@ class MinerBot(BaseAgent):
         super().release_locks() 
         
     async def _publish_lock_update(self, message_type: str):
-        """Publica el mensaje de bloqueo/desbloqueo al sistema (target: All)."""
         sector_id = self._calculate_sector_id(self.mining_position)
         
         lock_message = {
@@ -277,33 +251,26 @@ class MinerBot(BaseAgent):
         self._mining_offset += 1 
         self.logger.info("Ciclo minería completado.")
         self.mc.postToChat(f"[Miner] Ciclo de mineria completado. Requisitos cubiertos.")
-        self._clear_marker() # Limpiar el marcador al terminar
+        self._clear_marker()
     
     # --- MÉTODOS DE MANEJO DE ESTADO Y COMANDOS ---
 
     def _reset_mining_task(self, reset_requirements: bool = True, reset_inventory: bool = True):
-        """
-        Reinicia el inventario y estado para una nueva tarea manual.
-        Si reset_requirements es False, MANTIENE los requisitos cargados (para 'fulfill' o cambio de estrategia).
-        Si reset_inventory es False, MANTIENE el inventario actual.
-        """
         if self.mining_sector_locked:
             self.release_locks() 
             
         if reset_requirements:
              self.requirements = {}
         
-        # Reinicio condicional del inventario
         if reset_inventory:
             self.inventory = {mat: 0 for mat in MATERIAL_MAP.keys()}
             
-        self._mining_offset = 0 # Reiniciar offset para empezar desde la base
+        self._mining_offset = 0 
         self.state = AgentState.IDLE
         self.mining_sector_locked = False
         self.locked_sector_id = ""
-        self.inventory_publish_counter = 0 # Resetear contador de publicación
+        self.inventory_publish_counter = 0 
         
-        # Forzar la recreación de la instancia de la estrategia
         StrategyClass = self.strategy_classes.get(self.current_strategy_name, VerticalSearchStrategy)
         self.current_strategy_instance = StrategyClass(self.mc, self.logger)
 
@@ -318,18 +285,14 @@ class MinerBot(BaseAgent):
             command = payload.get("command_name")
             
             if command == 'fulfill':
-                 # FIX CRÍTICO: Pausa para sincronización de mensajes antes de validar
                  await asyncio.sleep(0.5) 
 
-                 # --- VALIDACIÓN DE DEPENDENCIA: BUILDER BOT ---
                  if not self.requirements:
                      self.logger.warning("INTENTO FALLIDO: /miner fulfill llamado sin BOM previo del BuilderBot.")
                      self.mc.postToChat("[Miner] ERROR: No he recibido la lista de materiales del Builder.")
                      self.mc.postToChat("[Miner] REQUISITO: Ejecuta '/builder bom' primero.")
                      return
-                 # -----------------------------------------------
                  
-                 # Si hay requisitos, los mantenemos y reseteamos el resto. Inventario se limpia (nueva tarea).
                  self._reset_mining_task(reset_requirements=False, reset_inventory=True) 
                  self._parse_start_params(params)
                  
@@ -340,25 +303,21 @@ class MinerBot(BaseAgent):
                  target_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.z)})"
                  self.mc.postToChat(f"[Miner] Tarea: Recolectar BOM de BuilderBot. Requisitos: {req_str}. Estrategia: {self.current_strategy_name.upper()}. Iniciando en {target_pos}.")
                  
-                 # Forzar la reevaluación inmediata
                  await self._select_adaptive_strategy()
                  if not self._check_requirements_fulfilled():
                      self.state = AgentState.RUNNING
                  else: self.state = AgentState.IDLE
                  
             elif command == 'start':
-                # 'start' resetea todo por si el usuario quiere una tarea nueva manual
                 self._reset_mining_task(reset_requirements=True, reset_inventory=True) 
                 self._parse_start_params(params)
                 
                 self.manual_strategy_active = False 
 
                 if not self.requirements:
-                    # TAREA POR DEFECTO: 40 Dirt y 40 Cobblestone
                     self.requirements = {"dirt": 40, "cobblestone": 40} 
                     self.logger.info("Iniciando mineria manual con tarea por defecto: 40 Dirt y 40 Cobblestone.")
                 
-                # Pre-selección de estrategia para Dirt/Sand
                 pending_dirt_or_sand = self.requirements.get("dirt", 0) > 0 or self.requirements.get("sand", 0) > 0
                 if self.requirements and pending_dirt_or_sand:
                      self.current_strategy_name = 'grid'
@@ -388,7 +347,6 @@ class MinerBot(BaseAgent):
                     self.logger.info(f"Modo de estrategia manual activado: {self.current_strategy_name}")
                     
                     if self.state == AgentState.RUNNING and old_strategy_name != self.current_strategy_name:
-                         # --- RESETEA INVENTARIO (reset_inventory=True) como se pidió en el requerimiento ---
                          self._reset_mining_task(reset_requirements=False, reset_inventory=True) 
                          
                          self.state = AgentState.RUNNING 
@@ -415,7 +373,6 @@ class MinerBot(BaseAgent):
 
             
         elif msg_type == "materials.requirements.v1":
-            # Cargar requisitos
             new_requirements = payload.copy()
             
             if new_requirements:
@@ -423,7 +380,6 @@ class MinerBot(BaseAgent):
                  self.inventory = {mat: 0 for mat in MATERIAL_MAP.keys()}
                  self.logger.info(f"Nuevos requisitos cargados: {self.requirements}")
             
-            # Solo iniciar si el status es PENDING (flujo automático). 
             if message.get("status") == "PENDING":
                 ctx_zone = message.get("context", {}).get("target_zone")
                 if ctx_zone:
@@ -445,7 +401,6 @@ class MinerBot(BaseAgent):
 
                     self.logger.info(f"Minero desplazado a: ({self.mining_position.x}, {self.mining_position.z})")
                 
-                # Al ser flujo automático, permitimos que la IA decida (manual=False)
                 self.manual_strategy_active = False 
                 await self._select_adaptive_strategy()
                 
@@ -514,45 +469,48 @@ class MinerBot(BaseAgent):
                 self.logger.info(f"Estrategia manual: {strat}")
 
     async def _select_adaptive_strategy(self):
-        # Calcular materiales pendientes para la lógica de switching
         if not self.requirements: return 
-        pending = {m: q - self.inventory.get(m, 0) for m, q in self.requirements.items() if q > self.inventory.get(m, 0)}
+        
+        # FUNCIONAL: Construir diccionario 'pending' usando filter y map
+        pending_items = filter(
+            lambda item: item[1] > self.inventory.get(item[0], 0),
+            self.requirements.items()
+        )
+        # Transformar a diccionario con la cantidad restante
+        pending = dict(map(
+            lambda item: (item[0], item[1] - self.inventory.get(item[0], 0)),
+            pending_items
+        ))
+
         if not pending: return 
 
-        # --- LÓGICA DE SWITCHING AUTOMÁTICO DESDE MANUAL (VERTICAL -> GRID) ---
-        # Si el usuario puso manual VERTICAL, pero ya no hace falta piedra y SÍ tierra/arena...
         if self.manual_strategy_active and self.current_strategy_name == 'vertical':
              needs_dirt_sand = pending.get("dirt", 0) > 0 or pending.get("sand", 0) > 0
-             needs_stone = any(pending.get(mat, 0) > 0 for mat in ["cobblestone", "stone"])
+             # FUNCIONAL: Uso de any con map
+             needs_stone = any(map(lambda mat: pending.get(mat, 0) > 0, ["cobblestone", "stone"]))
              
-             # Si no necesitamos piedra pero si tierra, desbloqueamos el manual para que la IA actúe
              if needs_dirt_sand and not needs_stone:
                  self.logger.info("Modo Manual 'Vertical' ineficaz (Piedra completa, falta Tierra). Pasando a Auto.")
-                 self.manual_strategy_active = False # Quitamos el lock manual
+                 self.manual_strategy_active = False 
                  self.mc.postToChat("[Miner] Auto-switching: Vertical -> Grid (Piedra completada).")
 
-        # Si el usuario forzó una estrategia (y no se ha desbloqueado arriba), ignoramos la adaptación
         if self.manual_strategy_active:
             return
 
         new_strat = self.current_strategy_name 
 
-        # --- LÓGICA DE PRIORIDAD ESPECÍFICA ---
+        # --- LÓGICA DE PRIORIDAD ESPECÍFICA (usando el diccionario filtrado) ---
         
-        # 1. PRIORIDAD MÁXIMA: Dirt o Sand (Usar Grid Search)
         if pending.get("dirt", 0) > 0 or pending.get("sand", 0) > 0:
             new_strat = "grid" 
         
-        # 2. SEGUNDA PRIORIDAD: Cobblestone o Stone (Usar Vertical Search)
-        elif any(pending.get(mat, 0) > 0 for mat in ["cobblestone", "stone"]):
+        elif any(map(lambda mat: pending.get(mat, 0) > 0, ["cobblestone", "stone"])):
             new_strat = "vertical" 
         
-        # 3. TERCERA PRIORIDAD: ORES (Usar Vein Search)
-        elif any(pending.get(mat, 0) > 0 for mat in ["diamond_ore", "iron_ore", "gold_ore", "coal_ore", "redstone_ore"]):
+        elif any(map(lambda mat: pending.get(mat, 0) > 0, ["diamond_ore", "iron_ore", "gold_ore", "coal_ore", "redstone_ore"])):
             new_strat = "vein"
         
-        # 4. Fallback para otros
-        elif any(pending.get(mat, 0) > 0 for mat in ["wood", "wood_planks", "glass", "glass_pane", "sandstone", "gravel"]):
+        elif any(map(lambda mat: pending.get(mat, 0) > 0, ["wood", "wood_planks", "glass", "glass_pane", "sandstone", "gravel"])):
             new_strat = "vertical" 
 
         if new_strat != self.current_strategy_name:
@@ -576,24 +534,37 @@ class MinerBot(BaseAgent):
         await self.broker.publish(msg)
 
     async def _publish_status(self):
-        pending_materials = {m: q - self.inventory.get(m, 0) for m, q in self.requirements.items() if q > self.inventory.get(m, 0)}
+        # FUNCIONAL: Uso de filter para determinar pendientes
+        pending_materials = list(filter(
+            lambda item: item[1] > self.inventory.get(item[0], 0),
+            self.requirements.items()
+        ))
         
         if self.requirements:
-            req_str_parts = [f"{self.inventory.get(m, 0)}/{q} {m}" for m, q in self.requirements.items() if q > 0]
+            # FUNCIONAL: Uso de filter y map para formatear cadenas
+            required_items = filter(lambda item: item[1] > 0, self.requirements.items())
+            req_str_parts = map(
+                lambda item: f"{self.inventory.get(item[0], 0)}/{item[1]} {item[0]}",
+                required_items
+            )
             req_str = ", ".join(req_str_parts)
+            
             if not pending_materials:
                  req_str = f"Completado: {req_str}"
         else:
             req_str = "Ninguno"
 
-        extra_inv_items = {m: q for m, q in self.inventory.items() if q > 0 and m not in self.requirements}
-        inv_str = ", ".join([f"{q} {m}" for m, q in extra_inv_items.items()])
+        # FUNCIONAL: Uso de filter y map para inventario extra
+        extra_inv_items = filter(
+            lambda item: item[1] > 0 and item[0] not in self.requirements,
+            self.inventory.items()
+        )
+        inv_str = ", ".join(map(lambda item: f"{item[1]} {item[0]}", extra_inv_items))
         
         lock_status = f"LOCKED (Sector: {self.locked_sector_id})" if self.mining_sector_locked else "UNLOCKED"
         remote_str = f"| Remoto: {len(self.remote_locks)} locks" if self.remote_locks else ""
         mining_pos = f"({int(self.mining_position.x)}, {int(self.mining_position.y)}, {int(self.mining_position.z)})"
         
-        # Añadido estado Manual a status
         strat_mode = "MANUAL" if self.manual_strategy_active else "AUTO"
         
         status_message = (

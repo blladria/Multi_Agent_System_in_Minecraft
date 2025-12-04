@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import logging
+from functools import reduce  # NECESARIO PARA PROGRAMACIÓN FUNCIONAL
 from typing import Dict, Any, Tuple, List
 from agents.base_agent import BaseAgent, AgentState
 from mcpi import block
@@ -8,16 +9,14 @@ from mcpi.vec3 import Vec3
 from datetime import datetime, timezone
 
 # --- 1. MAPEO DE MATERIALES (Solo Primitivos) ---
-# Limitado a lo que el MinerBot puede extraer directamente.
 MATERIAL_MAP = {
-    "cobblestone": block.COBBLESTONE.id, # Se obtiene minando piedra
-    "dirt": block.DIRT.id,               # Se obtiene minando tierra
+    "cobblestone": block.COBBLESTONE.id, 
+    "dirt": block.DIRT.id,               
     "air": block.AIR.id
 }
 
 # --- 2. DEFINICIÓN DE PLANTILLAS (TEMPLATES) ---
 
-# Diseño 1: Refugio Simple (3x3 - Muros de Cobblestone)
 TEMPLATE_SHELTER = [
     # Suelo (y=0)
     (0,0,0,'cobblestone'), (1,0,0,'cobblestone'), (2,0,0,'cobblestone'),
@@ -25,17 +24,16 @@ TEMPLATE_SHELTER = [
     (0,0,2,'cobblestone'), (1,0,2,'cobblestone'), (2,0,2,'cobblestone'),
     
     # Paredes (y=1)
-    (0,1,0,'cobblestone'), (1,1,0,'air'),         (2,1,0,'cobblestone'), # ENTRADA
+    (0,1,0,'cobblestone'), (1,1,0,'air'),         (2,1,0,'cobblestone'), 
     (0,1,1,'cobblestone'), (1,1,1,'air'),         (2,1,1,'cobblestone'), 
     (0,1,2,'cobblestone'), (1,1,2,'cobblestone'), (2,1,2,'cobblestone'),
     
     # Techo (y=2)
-    (0,2,0,'cobblestone'), (1,2,0,'air'),         (2,2,0,'cobblestone'), # ENTRADA SUPERIOR
+    (0,2,0,'cobblestone'), (1,2,0,'air'),         (2,2,0,'cobblestone'), 
     (0,2,1,'cobblestone'), (1,2,1,'cobblestone'), (2,2,1,'cobblestone'),
     (0,2,2,'cobblestone'), (1,2,2,'cobblestone'), (2,2,2,'cobblestone'),
 ]
 
-# Diseño 2: Torre de Vigilancia (100% Cobblestone) - 3x3
 TEMPLATE_TOWER = [
     # Base Sólida 3x3 (y=0)
     (0,0,0,'cobblestone'), (1,0,0,'cobblestone'), (2,0,0,'cobblestone'),
@@ -64,7 +62,6 @@ TEMPLATE_TOWER = [
     (0,4,2,'cobblestone'), (1,4,2,'air'),         (2,4,2,'cobblestone'),
 ]
 
-# Diseño 3: Búnker de Almacenamiento (Walls: Dirt, Roof: Cobblestone) - 4x4
 TEMPLATE_BUNKER = [
     # Base 4x4 (Cobblestone) - y=0
     (0,0,0,'cobblestone'), (1,0,0,'cobblestone'), (2,0,0,'cobblestone'), (3,0,0,'cobblestone'),
@@ -91,7 +88,6 @@ TEMPLATE_BUNKER = [
     (0,3,3,'cobblestone'), (1,3,3,'cobblestone'), (2,3,3,'cobblestone'), (3,3,3,'cobblestone'),
 ]
 
-# Registro de Plantillas
 BUILDING_TEMPLATES = {
     "simple_shelter": TEMPLATE_SHELTER,
     "watch_tower": TEMPLATE_TOWER,
@@ -101,9 +97,7 @@ BUILDING_TEMPLATES = {
 class BuilderBot(BaseAgent):
     """
     Agente BuilderBot:
-    1. Recibe sugerencias del ExplorerBot o comandos manuales.
-    2. Calcula materiales necesarios (BOM).
-    3. Construye la estructura bloque a bloque.
+    Refactorizado para cumplir estrictamente con paradigmas funcionales (Map, Filter, Reduce).
     """
     def __init__(self, agent_id: str, mc_connection, message_broker):
         super().__init__(agent_id, mc_connection, message_broker)
@@ -117,37 +111,43 @@ class BuilderBot(BaseAgent):
         self.current_template_name = "simple_shelter" # Default
         self.current_design = BUILDING_TEMPLATES[self.current_template_name]
         
-        # Marcador Verde (Lana Verde Lima = data 5)
         self._set_marker_properties(block.WOOL.id, 5)
 
-    # --- Lógica de Inventario ---
+    # --- Lógica de Inventario (Funcional) ---
 
     def _check_inventory(self) -> bool:
-        """Verifica si tenemos todos los materiales necesarios."""
+        """Verifica si tenemos todos los materiales necesarios usando filter."""
         if not self.required_bom:
-            # Si no hay BOM definido, asumimos que no necesitamos nada (o no estamos listos)
             return False
-            
-        return all(self.current_inventory.get(material, 0) >= required_qty 
-                   for material, required_qty in self.required_bom.items())
+        
+        # FUNCIONAL: Filtramos los materiales que NO cumplen el requisito
+        insufficient_materials = list(filter(
+            lambda item: self.current_inventory.get(item[0], 0) < item[1],
+            self.required_bom.items()
+        ))
+        
+        # Si la lista de insuficientes está vacía, tenemos todo
+        return len(insufficient_materials) == 0
                    
     def _calculate_bom_for_structure(self) -> Dict[str, int]:
-        """Calcula el BOM (Bill of Materials) basado en la plantilla ACTIVA."""
-        bom = {}
-        # Recorremos el diseño actual contando bloques
-        for _, _, _, material_key in self.current_design:
-            if material_key != 'air':
-                bom[material_key] = bom.get(material_key, 0) + 1
-        
-        self.logger.info(f"BOM calculado para '{self.current_template_name}': {bom}")
-        return bom
+        """Calcula el BOM usando reduce."""
+        return self._reduce_design_to_bom(self.current_design)
         
     def _calculate_bom_for_specific_design(self, design_list) -> Dict[str, int]:
-        """Calcula el BOM para una lista de diseño dada (usado en 'plan list')."""
-        bom = {}
-        for _, _, _, material_key in design_list:
+        """Calcula el BOM para una lista dada usando reduce."""
+        return self._reduce_design_to_bom(design_list)
+
+    def _reduce_design_to_bom(self, design_list) -> Dict[str, int]:
+        """Helper funcional puro para reducir una lista de bloques a un diccionario de conteo."""
+        def bom_reducer(acc, block_tuple):
+            material_key = block_tuple[3]
             if material_key != 'air':
-                bom[material_key] = bom.get(material_key, 0) + 1
+                acc[material_key] = acc.get(material_key, 0) + 1
+            return acc
+            
+        # FUNCIONAL: Uso de reduce
+        bom = reduce(bom_reducer, design_list, {})
+        self.logger.info(f"BOM calculado (funcional): {bom}")
         return bom
 
     # --- CICLO DE VIDA ---
@@ -160,15 +160,12 @@ class BuilderBot(BaseAgent):
     async def decide(self):
         if self.state == AgentState.RUNNING:
             if not self.target_zone:
-                # Si estamos corriendo pero no hay zona, esperamos
                 self.logger.info("Esperando zona de construccion (Mapa o Jugador).")
                 self.state = AgentState.WAITING 
             elif not self._check_inventory():
-                # Si tenemos zona pero no materiales
                 self.logger.info(f"Esperando materiales para '{self.current_template_name}'.")
                 self.state = AgentState.WAITING 
             else:
-                # Tenemos todo
                 self.logger.info("Materiales listos y zona definida. Iniciando construccion.")
                 self.is_building = True
 
@@ -178,23 +175,18 @@ class BuilderBot(BaseAgent):
             center_x = self.target_zone.get('x', 0)
             center_z = self.target_zone.get('z', 0)
             
-            # Marcador visual de inicio
             try:
                 y_surface = self.mc.getHeight(center_x, center_z)
                 self._update_marker(Vec3(center_x, y_surface + 5, center_z))
             except Exception: pass
             
-            # Quitamos marcador para no estorbar
             self._clear_marker()
             
-            # --- CONSTRUCCIÓN REAL ---
-            # Se pasa y=0 relativo, _build_structure calcula la altura real
             await self._build_structure(Vec3(center_x, 0, center_z)) 
             
-            # Post-construccion
             if self.state not in (AgentState.PAUSED, AgentState.ERROR):
                 self.is_building = False
-                self.required_bom = {} # Limpiamos BOM al terminar
+                self.required_bom = {} 
                 self.state = AgentState.IDLE
                 await self._publish_build_complete()
                 self._clear_marker() 
@@ -202,22 +194,23 @@ class BuilderBot(BaseAgent):
                  self.logger.warning("Construccion interrumpida.")
 
     async def _build_structure(self, center_pos: Vec3):
-        """Itera sobre la lista de bloques de la plantilla y los coloca en el mundo."""
         center_x, center_z = int(center_pos.x), int(center_pos.z)
         
-        # Encontrar la altura del suelo en el centro
         try:
              start_y_surface = self.mc.getHeight(center_x, center_z) 
         except Exception:
              start_y_surface = 65
         
-        # Calcular el desplazamiento para centrar la estructura (la coordenada dada será el centro)
-        max_x = max([b[0] for b in self.current_design])
-        max_z = max([b[2] for b in self.current_design])
+        # FUNCIONAL: Uso de map para obtener coordenadas X y Z
+        x_coords = list(map(lambda b: b[0], self.current_design))
+        z_coords = list(map(lambda b: b[2], self.current_design))
+        
+        max_x = max(x_coords)
+        max_z = max(z_coords)
         
         x_base = center_x - (max_x // 2)
         z_base = center_z - (max_z // 2)
-        y_base = start_y_surface # Construimos A RAS DE SUELO sobre la altura detectada
+        y_base = start_y_surface 
         
         self.logger.info(f"Construyendo '{self.current_template_name}' en base: ({x_base}, {y_base}, {z_base})")
 
@@ -232,7 +225,6 @@ class BuilderBot(BaseAgent):
             
             block_id = block.AIR.id
             if material_key != 'air':
-                # Consumir material
                 if self.current_inventory.get(material_key, 0) > 0:
                     block_id = MATERIAL_MAP.get(material_key, block.COBBLESTONE.id)
                 else:
@@ -260,16 +252,24 @@ class BuilderBot(BaseAgent):
         self.logger.info(f"Construccion de '{self.current_template_name}' finalizada con exito.")
 
     async def _publish_status(self):
-        """Genera y envía un mensaje de estado detallado al chat del juego."""
+        """Genera y envía un mensaje de estado detallado usando map y filter."""
         
         req_bom_str = []
         is_ready = True
+        
         if self.required_bom:
-            for material, required_qty in self.required_bom.items():
-                current_qty = self.current_inventory.get(material, 0)
-                req_bom_str.append(f"{current_qty}/{required_qty} {material}")
-                if current_qty < required_qty:
-                    is_ready = False
+            # FUNCIONAL: Map para crear las strings de estado
+            req_bom_str = list(map(
+                lambda item: f"{self.current_inventory.get(item[0], 0)}/{item[1]} {item[0]}",
+                self.required_bom.items()
+            ))
+            
+            # FUNCIONAL: Filter para chequear si hay insuficientes
+            insufficient = list(filter(
+                lambda item: self.current_inventory.get(item[0], 0) < item[1],
+                self.required_bom.items()
+            ))
+            is_ready = len(insufficient) == 0
         
         req_status = "LISTO" if is_ready and self.required_bom else "PENDIENTE"
         req_str = ", ".join(req_bom_str) if req_bom_str else "Ninguno"
@@ -299,12 +299,8 @@ class BuilderBot(BaseAgent):
             args = params.get('args', [])
 
             if command == 'build':
-                # --- CAMBIO IMPORTANTE: Construir donde está el jugador si no hay zona ---
-                
-                # 1. Intentar obtener posición del jugador
                 try:
                     player_pos = self.mc.player.getTilePos()
-                    # Actualizamos la zona objetivo a la posición del jugador
                     self.target_zone = {"x": player_pos.x, "z": player_pos.z}
                     self.logger.info(f"Comando 'build' manual. Zona establecida en jugador: {self.target_zone}")
                 except Exception as e:
@@ -313,7 +309,6 @@ class BuilderBot(BaseAgent):
                          self.mc.postToChat("[Builder] Error: No tengo mapa y no puedo localizarte.")
                          return
 
-                # 2. Verificar inventario y cambiar estado
                 self.state = AgentState.RUNNING
                 
                 if self._check_inventory():
@@ -330,28 +325,26 @@ class BuilderBot(BaseAgent):
                         self.current_template_name = template_name
                         self.current_design = BUILDING_TEMPLATES[template_name]
                         
-                        # --- CAMBIO: CALCULAR BOM Y PUBLICAR INMEDIATAMENTE ---
                         self.required_bom = self._calculate_bom_for_structure()
                         
-                        # Publicamos con estado ACKNOWLEDGED para que el MinerBot lo guarde
                         await self._publish_requirements_to_miner(status="ACKNOWLEDGED")
                         
-                        req_str = ", ".join([f"{q} {m}" for m, q in self.required_bom.items()])
+                        # FUNCIONAL: Map para formatear salida
+                        req_str = ", ".join(map(lambda item: f"{item[1]} {item[0]}", self.required_bom.items()))
+                        
                         self.logger.info(f"Plan fijado: {template_name}. BOM: {req_str}")
                         self.mc.postToChat(f"[Builder] Plan fijado a '{template_name}'. Requisitos: {req_str}. Listo para '/miner fulfill'.")
-                        # ------------------------------------------------------
 
                     else:
                         self.mc.postToChat(f"[Builder] No conozco la plantilla '{template_name}'.")
                 
                 elif len(args) >= 1 and args[0] == 'list':
-                     # --- CAMBIO: MOSTRAR MATERIALES EN LA LISTA ---
                      self.mc.postToChat("[Builder] Plantillas disponibles:")
                      for name, design in BUILDING_TEMPLATES.items():
                          bom = self._calculate_bom_for_specific_design(design)
-                         bom_str = ", ".join([f"{q} {m}" for m, q in bom.items()])
+                         # FUNCIONAL: Map para formatear salida
+                         bom_str = ", ".join(map(lambda item: f"{item[1]} {item[0]}", bom.items()))
                          self.mc.postToChat(f" - {name}: [{bom_str}]")
-                     # -----------------------------------------------
             
             elif command == 'pause': 
                 self.handle_pause()
@@ -367,9 +360,8 @@ class BuilderBot(BaseAgent):
                 self._clear_marker()
 
             elif command == 'bom':
-                 # Comando manual para visualizar BOM (ahora es redundante con plan set, pero útil)
                  self.required_bom = self._calculate_bom_for_structure()
-                 req_str = ", ".join([f"{q} {m}" for m, q in self.required_bom.items()])
+                 req_str = ", ".join(map(lambda item: f"{item[1]} {item[0]}", self.required_bom.items()))
                  if self.required_bom:
                     await self._publish_requirements_to_miner(status="ACKNOWLEDGED")
                     self.mc.postToChat(f"[Builder] BOM actual: {req_str}")
@@ -380,7 +372,6 @@ class BuilderBot(BaseAgent):
                 await self._publish_status()
 
         elif msg_type == "map.v1":
-            # Flujo automático con Explorer
             context = message.get("context", {})
             optimal_zone_center = payload.get("optimal_zone", {}).get("center", {})
 
@@ -410,9 +401,6 @@ class BuilderBot(BaseAgent):
             self.logger.info(f"Inventario actualizado.")
             
             if self.state == AgentState.WAITING and self._check_inventory():
-                # Si estábamos esperando materiales y ya los tenemos:
-                # 1. Si tenemos zona, arrancamos.
-                # 2. Si no tenemos zona (caso manual), nos quedamos en WAITING/IDLE hasta el 'builder build'.
                 if self.target_zone:
                     self.state = AgentState.RUNNING
                     self.is_building = True
@@ -421,10 +409,6 @@ class BuilderBot(BaseAgent):
                     self.mc.postToChat(f"[Builder] Materiales recibidos. Usa '/builder build' para construir aqui.")
                 
     async def _publish_requirements_to_miner(self, status: str = "PENDING"):
-        """
-        Publica los requisitos.
-        status: "PENDING" (inicia minería auto), "ACKNOWLEDGED" (carga requisitos para fulfill manual).
-        """
         requirements_message = {
             "type": "materials.requirements.v1",
             "source": self.agent_id,
