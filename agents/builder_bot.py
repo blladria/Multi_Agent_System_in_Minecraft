@@ -111,6 +111,9 @@ class BuilderBot(BaseAgent):
         self.current_template_name = "simple_shelter" # Default
         self.current_design = BUILDING_TEMPLATES[self.current_template_name]
         
+        # NUEVO: Bandera para saber si el usuario ha forzado una plantilla
+        self.manual_override = False 
+        
         self._set_marker_properties(block.WOOL.id, 5)
 
     # --- Lógica de Inventario (Funcional) ---
@@ -188,6 +191,7 @@ class BuilderBot(BaseAgent):
                 self.is_building = False
                 self.required_bom = {} 
                 self.state = AgentState.IDLE
+                self.manual_override = False # Resetear override al terminar
                 await self._publish_build_complete()
                 self._clear_marker() 
             else:
@@ -277,8 +281,10 @@ class BuilderBot(BaseAgent):
         zone_str = f"({self.target_zone.get('x', '?')}, {self.target_zone.get('z', '?')})"
         build_status = "SI" if self.is_building else "NO"
         
+        override_str = " (MANUAL)" if self.manual_override else ""
+
         status_message = (
-            f"[{self.agent_id}] Estado: {self.state.name} | Plantilla: {self.current_template_name.upper()} | "
+            f"[{self.agent_id}] Estado: {self.state.name} | Plantilla: {self.current_template_name.upper()}{override_str} | "
             f"Zona: {zone_str}\n"
             f"  > Requisitos ({req_status}): {req_str}\n"
             f"  > Construyendo: {build_status}"
@@ -325,6 +331,9 @@ class BuilderBot(BaseAgent):
                         self.current_template_name = template_name
                         self.current_design = BUILDING_TEMPLATES[template_name]
                         
+                        # CORRECCIÓN: Activamos el override manual
+                        self.manual_override = True 
+                        
                         self.required_bom = self._calculate_bom_for_structure()
                         
                         await self._publish_requirements_to_miner(status="ACKNOWLEDGED")
@@ -333,7 +342,7 @@ class BuilderBot(BaseAgent):
                         req_str = ", ".join(map(lambda item: f"{item[1]} {item[0]}", self.required_bom.items()))
                         
                         self.logger.info(f"Plan fijado: {template_name}. BOM: {req_str}")
-                        self.mc.postToChat(f"[Builder] Plan fijado a '{template_name}'. Requisitos: {req_str}. Listo para '/miner fulfill'.")
+                        self.mc.postToChat(f"[Builder] Plan fijado MANUALMENTE a '{template_name}'. Requisitos: {req_str}. Listo para '/miner fulfill'.")
 
                     else:
                         self.mc.postToChat(f"[Builder] No conozco la plantilla '{template_name}'.")
@@ -381,10 +390,15 @@ class BuilderBot(BaseAgent):
                  self.target_zone = optimal_zone_center
 
             suggested = payload.get("suggested_template")
-            if suggested and suggested in BUILDING_TEMPLATES:
-                self.current_template_name = suggested
-                self.current_design = BUILDING_TEMPLATES[suggested]
-                self.mc.postToChat(f"[Builder] Acepto sugerencia del Explorer: '{suggested}'.")
+            
+            # CORRECCIÓN: Solo aceptamos la sugerencia si NO hay override manual
+            if not self.manual_override:
+                if suggested and suggested in BUILDING_TEMPLATES:
+                    self.current_template_name = suggested
+                    self.current_design = BUILDING_TEMPLATES[suggested]
+                    self.mc.postToChat(f"[Builder] Acepto sugerencia del Explorer: '{suggested}'.")
+            else:
+                 self.mc.postToChat(f"[Builder] Ignoro sugerencia del Explorer ('{suggested}') porque hay plan manual: '{self.current_template_name}'.")
             
             self.required_bom = self._calculate_bom_for_structure() 
             if self.required_bom:
