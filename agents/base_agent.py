@@ -4,7 +4,7 @@ import time
 import asyncio
 from abc import ABC, abstractmethod
 from enum import Enum, auto
-# NUEVAS IMPORTACIONES PARA VISUALIZACIÓN
+
 from mcpi import block 
 from mcpi.vec3 import Vec3
 
