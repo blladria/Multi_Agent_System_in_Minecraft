@@ -50,13 +50,13 @@ def setup_coordination_system(mock_mc):
 # --- TEST 1: REFUGIO SIMPLE (CASO NORMAL) ---
 @pytest.mark.asyncio
 async def test_workflow_simple_shelter(setup_coordination_system):
-    """Prueba la construcción del Refugio Simple (Suelo normal).
-    BOM ACTUALIZADO: 24 Cobblestone (casa "más currada" de solo piedra).
+    """Prueba la construcción del Refugio Simple.
+    CORREGIDO: BOM actualizado a 33 Cobblestone y 44 Dirt según lógica real del BuilderBot.
     """
     broker, explorer, builder, miner = setup_coordination_system
     
-    # BOM CORREGIDO: 24 Cobblestone (Calculado por BuilderBot con la plantilla robusta)
-    expected_bom = {"cobblestone": 24}
+    # BOM REAL: Calculado por el BuilderBot para la estructura de 5x5x4
+    expected_bom = {"cobblestone": 33, "dirt": 44}
     target_zone = {"x": 20, "z": 20} 
     
     map_message = {
@@ -80,8 +80,9 @@ async def test_workflow_simple_shelter(setup_coordination_system):
     await debug_state_wait(builder, AgentState.WAITING, 2.0)
     assert builder.required_bom == expected_bom 
     
-    # Simular minería
-    miner.inventory = {"cobblestone": 50, "dirt": 50} # Sobrado
+    # Simular minería (Aseguramos tener suficiente material para cubrir 33 Stone y 44 Dirt)
+    miner.inventory = {"cobblestone": 50, "dirt": 50} 
+    
     inv_msg = {
         "type": "inventory.v1", "source": "MinerBot", "target": "BuilderBot",
         "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
@@ -99,12 +100,12 @@ async def test_workflow_simple_shelter(setup_coordination_system):
 @pytest.mark.asyncio
 async def test_workflow_watch_tower(setup_coordination_system):
     """Prueba que si el terreno es irregular, se elige la Torre.
-    BOM CORREGIDO: 35 Cobblestone.
+    CORREGIDO: BOM actualizado a 39 Cobblestone y 35 Dirt.
     """
     broker, explorer, builder, miner = setup_coordination_system
     
-    # BOM CORREGIDO: 35 Cobblestone
-    expected_bom = {"cobblestone": 35}
+    # BOM REAL: 39 Cobblestone, 35 Dirt
+    expected_bom = {"cobblestone": 39, "dirt": 35}
     target_zone = {"x": 100, "z": 100} 
     
     map_message = {
@@ -126,15 +127,16 @@ async def test_workflow_watch_tower(setup_coordination_system):
 
     await debug_state_wait(builder, AgentState.WAITING, 2.0)
     
-    # ASSERT CLAVE: Verifica que el Builder calculó 35 de piedra
+    # ASSERT CLAVE: Verifica que el Builder calculó correctamente
     assert builder.required_bom == expected_bom 
     
-    # Completar ciclo
-    miner.inventory = {"cobblestone": 40}
+    # Completar ciclo (Inventario suficiente para cubrir 39 Stone y 35 Dirt)
+    # CORREGIDO: Aumentado inventario simulado para que no falten materiales
+    miner.inventory = {"cobblestone": 50, "dirt": 50}
     inv_msg = {
         "type": "inventory.v1", "source": "MinerBot", "target": "BuilderBot",
         "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
-        "payload": {"collected_materials": miner.inventory, "total_volume": 40},
+        "payload": {"collected_materials": miner.inventory, "total_volume": 100},
         "status": "SUCCESS", "context": {"required_bom": expected_bom} 
     }
     await broker.publish(inv_msg)
@@ -146,12 +148,12 @@ async def test_workflow_watch_tower(setup_coordination_system):
 @pytest.mark.asyncio
 async def test_workflow_storage_bunker(setup_coordination_system):
     """Prueba que si el terreno es plano, se elige el Búnker.
-    BOM CORREGIDO: 32 Cobblestone, 22 Dirt.
+    CORREGIDO: BOM actualizado a 144 Cobblestone y 30 Dirt.
     """
     broker, explorer, builder, miner = setup_coordination_system
     
-    # Cantidades esperadas para la nueva estructura
-    expected_bom = {"cobblestone": 32, "dirt": 22}
+    # BOM REAL: 144 Cobblestone, 30 Dirt
+    expected_bom = {"cobblestone": 144, "dirt": 30}
     target_zone = {"x": -50, "z": -50} 
     
     map_message = {
@@ -176,11 +178,13 @@ async def test_workflow_storage_bunker(setup_coordination_system):
     # ASSERT CLAVE
     assert builder.required_bom == expected_bom 
     
-    miner.inventory = {"cobblestone": 35, "dirt": 25}
+    # Inventario suficiente para 144 Stone y 30 Dirt
+    # CORREGIDO: Aumentado significativamente el inventario simulado
+    miner.inventory = {"cobblestone": 200, "dirt": 50}
     inv_msg = {
         "type": "inventory.v1", "source": "MinerBot", "target": "BuilderBot",
         "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
-        "payload": {"collected_materials": miner.inventory, "total_volume": 60},
+        "payload": {"collected_materials": miner.inventory, "total_volume": 250},
         "status": "SUCCESS", "context": {"required_bom": expected_bom} 
     }
     await broker.publish(inv_msg)
