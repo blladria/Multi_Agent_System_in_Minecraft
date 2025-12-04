@@ -17,76 +17,108 @@ MATERIAL_MAP = {
 
 # --- 2. DEFINICIÓN DE PLANTILLAS (TEMPLATES) ---
 
-TEMPLATE_SHELTER = [
-    # Suelo (y=0)
-    (0,0,0,'cobblestone'), (1,0,0,'cobblestone'), (2,0,0,'cobblestone'),
-    (0,0,1,'cobblestone'), (1,0,1,'cobblestone'), (2,0,1,'cobblestone'),
-    (0,0,2,'cobblestone'), (1,0,2,'cobblestone'), (2,0,2,'cobblestone'),
+def _generate_complex_shelter():
+    """Genera un refugio de 5x5x4 con ventanas y techo de tierra."""
+    structure = []
+    width, height, depth = 5, 4, 5
     
-    # Paredes (y=1)
-    (0,1,0,'cobblestone'), (1,1,0,'air'),         (2,1,0,'cobblestone'), 
-    (0,1,1,'cobblestone'), (1,1,1,'air'),         (2,1,1,'cobblestone'), 
-    (0,1,2,'cobblestone'), (1,1,2,'cobblestone'), (2,1,2,'cobblestone'),
+    for y in range(height):
+        for x in range(width):
+            for z in range(depth):
+                mat = 'air'
+                
+                # Suelo (y=0) de piedra
+                if y == 0:
+                    mat = 'cobblestone'
+                # Techo (última capa) de tierra
+                elif y == height - 1:
+                    mat = 'dirt'
+                # Paredes
+                elif x == 0 or x == width - 1 or z == 0 or z == depth - 1:
+                    # Ventanas (aire) en el centro de las paredes a altura 2
+                    if y == 2 and (1 < x < width-2 or 1 < z < depth-2):
+                        mat = 'air'
+                    # Esquinas de piedra
+                    elif (x == 0 or x == width-1) and (z == 0 or z == depth-1):
+                        mat = 'cobblestone'
+                    # Resto de paredes de tierra compactada
+                    else:
+                        mat = 'dirt'
+                
+                # Puerta (aire) en el frente (z=0)
+                if z == 0 and x == 2 and y in [1, 2]:
+                    mat = 'air'
+
+                if mat != 'air':
+                    structure.append((x, y, z, mat))
+    return structure
+
+def _generate_chess_tower():
+    """Genera una torre de vigilancia alta con patrón de ajedrez (Piedra/Tierra)."""
+    structure = []
+    height = 10
+    width = 3
+    depth = 3
     
-    # Techo (y=2)
-    (0,2,0,'cobblestone'), (1,2,0,'air'),         (2,2,0,'cobblestone'), 
-    (0,2,1,'cobblestone'), (1,2,1,'cobblestone'), (2,2,1,'cobblestone'),
-    (0,2,2,'cobblestone'), (1,2,2,'cobblestone'), (2,2,2,'cobblestone'),
-]
+    for y in range(height):
+        for x in range(width):
+            for z in range(depth):
+                # Hueco interior para escalera (no incluida)
+                if x == 1 and z == 1:
+                    continue
+                
+                mat = 'air'
+                
+                # Almenas en la cima (y=9)
+                if y == height - 1:
+                    if (x + z) % 2 == 0: # Esquinas y centros alternos
+                        mat = 'cobblestone'
+                else:
+                    # Patrón de ajedrez en las paredes
+                    if (x + y + z) % 2 == 0:
+                        mat = 'cobblestone'
+                    else:
+                        mat = 'dirt'
+                
+                if mat != 'air':
+                    structure.append((x, y, z, mat))
+    return structure
 
-TEMPLATE_TOWER = [
-    # Base Sólida 3x3 (y=0)
-    (0,0,0,'cobblestone'), (1,0,0,'cobblestone'), (2,0,0,'cobblestone'),
-    (0,0,1,'cobblestone'), (1,0,1,'cobblestone'), (2,0,1,'cobblestone'),
-    (0,0,2,'cobblestone'), (1,0,2,'cobblestone'), (2,0,2,'cobblestone'),
+def _generate_reinforced_bunker():
+    """Genera un búnker ancho (7x7) con paredes dobles (Piedra fuera, Tierra dentro)."""
+    structure = []
+    width = 7
+    depth = 7
+    height = 4
     
-    # Nivel 1 (Paredes) - y=1
-    (0,1,0,'cobblestone'), (1,1,0,'air'),         (2,1,0,'cobblestone'), 
-    (0,1,1,'cobblestone'),                         (2,1,1,'cobblestone'),
-    (0,1,2,'cobblestone'), (1,1,2,'cobblestone'), (2,1,2,'cobblestone'),
-    (1,1,1,'air'), 
-    
-    # Nivel 2 (Paredes) - y=2
-    (0,2,0,'cobblestone'), (1,2,0,'air'),         (2,2,0,'cobblestone'), 
-    (0,2,1,'cobblestone'),                         (2,2,1,'cobblestone'),
-    (0,2,2,'cobblestone'), (1,2,2,'cobblestone'), (2,2,2,'cobblestone'),
+    for y in range(height):
+        for x in range(width):
+            for z in range(depth):
+                mat = 'air'
+                
+                # Suelo y Techo blindados (Piedra)
+                if y == 0 or y == height - 1:
+                    mat = 'cobblestone'
+                else:
+                    # Pared Exterior (Piedra)
+                    if x == 0 or x == width - 1 or z == 0 or z == depth - 1:
+                        mat = 'cobblestone'
+                    # Pared Interior (Tierra) - Recubrimiento
+                    elif x == 1 or x == width - 2 or z == 1 or z == depth - 2:
+                        mat = 'dirt'
+                
+                # Entrada tipo búnker (pequeña)
+                if z == 0 and x == 3 and y == 1:
+                    mat = 'air'
 
-    # Nivel 3 (Paredes) - y=3
-    (0,3,0,'cobblestone'), (1,3,0,'cobblestone'), (2,3,0,'cobblestone'),
-    (0,3,1,'cobblestone'),                         (2,3,1,'cobblestone'),
-    (0,3,2,'cobblestone'), (1,3,2,'cobblestone'), (2,3,2,'cobblestone'),
-    
-    # Nivel 4 (Almenas) - y=4
-    (0,4,0,'cobblestone'), (1,4,0,'air'),         (2,4,0,'cobblestone'),
-    (0,4,1,'air'),         (1,4,1,'air'),         (2,4,1,'air'), 
-    (0,4,2,'cobblestone'), (1,4,2,'air'),         (2,4,2,'cobblestone'),
-]
+                if mat != 'air':
+                    structure.append((x, y, z, mat))
+    return structure
 
-TEMPLATE_BUNKER = [
-    # Base 4x4 (Cobblestone) - y=0
-    (0,0,0,'cobblestone'), (1,0,0,'cobblestone'), (2,0,0,'cobblestone'), (3,0,0,'cobblestone'),
-    (0,0,1,'cobblestone'), (1,0,1,'cobblestone'), (2,0,1,'cobblestone'), (3,0,1,'cobblestone'),
-    (0,0,2,'cobblestone'), (1,0,2,'cobblestone'), (2,0,2,'cobblestone'), (3,0,2,'cobblestone'),
-    (0,0,3,'cobblestone'), (1,0,3,'cobblestone'), (2,0,3,'cobblestone'), (3,0,3,'cobblestone'),
-
-    # Nivel 1 (Paredes de Tierra) - y=1
-    (0,1,0,'dirt'), (1,1,0,'air'), (2,1,0,'dirt'), (3,1,0,'dirt'), 
-    (0,1,1,'dirt'),                                 (3,1,1,'dirt'),
-    (0,1,2,'dirt'),                                 (3,1,2,'dirt'),
-    (0,1,3,'dirt'), (1,1,3,'dirt'), (2,1,3,'dirt'), (3,1,3,'dirt'),
-
-    # Nivel 2 (Paredes de Tierra) - y=2
-    (0,2,0,'dirt'), (1,2,0,'air'), (2,2,0,'dirt'), (3,2,0,'dirt'), 
-    (0,2,1,'dirt'),                                 (3,2,1,'dirt'),
-    (0,2,2,'dirt'),                                 (3,2,2,'dirt'),
-    (0,2,3,'dirt'), (1,2,3,'dirt'), (2,2,3,'dirt'), (3,2,3,'dirt'),
-
-    # Nivel 3 (Techo Sólido Piedra) - y=3
-    (0,3,0,'cobblestone'), (1,3,0,'cobblestone'), (2,3,0,'cobblestone'), (3,3,0,'cobblestone'),
-    (0,3,1,'cobblestone'), (1,3,1,'cobblestone'), (2,3,1,'cobblestone'), (3,3,1,'cobblestone'),
-    (0,3,2,'cobblestone'), (1,3,2,'cobblestone'), (2,3,2,'cobblestone'), (3,3,2,'cobblestone'),
-    (0,3,3,'cobblestone'), (1,3,3,'cobblestone'), (2,3,3,'cobblestone'), (3,3,3,'cobblestone'),
-]
+# Generación de las listas finales
+TEMPLATE_SHELTER = _generate_complex_shelter()
+TEMPLATE_TOWER = _generate_chess_tower()
+TEMPLATE_BUNKER = _generate_reinforced_bunker()
 
 BUILDING_TEMPLATES = {
     "simple_shelter": TEMPLATE_SHELTER,
