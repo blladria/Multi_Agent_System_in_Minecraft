@@ -13,7 +13,6 @@ logger = logging.getLogger("JSONValidator")
 AGENT_IDENTIFIERS = ["ExplorerBot", "MinerBot", "BuilderBot", "Manager"]
 
 # Estados de los mensajes (SUCCESS es un estado requerido)
-# CORRECCIÓN: Se ha añadido "ACKNOWLEDGED" para permitir el flujo manual del Builder
 MESSAGE_STATUSES = ["SUCCESS", "ERROR", "PENDING", "ACKNOWLEDGMENT", "ACKNOWLEDGED"]
 
 # Esquema para la sección 'context' (metadatos opcionales, pero estructurados)

@@ -73,7 +73,7 @@ class BaseAgent(ABC):
         # Intentar cargar el estado si existe
         self._load_checkpoint()
 
-        # VISUALIZACIÓN (NUEVO)
+        # VISUALIZACIÓN
         self.marker_block_id = block.WOOL.id # Default: Lana
         self.marker_block_data = 0 # Default: Blanco
         # La posición inicial se establece alta para evitar conflictos
@@ -100,7 +100,7 @@ class BaseAgent(ABC):
         # Lógica de liberación de locks (Requerimiento de Sincronización)
         if new_state in (AgentState.STOPPED, AgentState.ERROR):
             self.release_locks()
-            self._clear_marker() # Nuevo: Borrar marcador al detenerse/fallar
+            self._clear_marker() # Borrar marcador al detenerse/fallar
             
         # Transición
         self._state = new_state
@@ -117,8 +117,8 @@ class BaseAgent(ABC):
     def _update_marker(self, new_pos: Vec3):
         """Mueve y actualiza el bloque marcador del agente."""
         
-        # --- FIX ANTI-LAG: Si la posición es la misma, no hacer nada ---
-        if (int(self.marker_position.x) == int(new_pos.x) and 
+# Optimización: Si la posición es la misma, no hacer nada para evitar lag        if (int(self.marker_position.x) == int(new_pos.x) and 
+            if (int(self.marker_position.x) == int(new_pos.x) and 
             int(self.marker_position.y) == int(new_pos.y) and 
             int(self.marker_position.z) == int(new_pos.z)):
             return
@@ -168,7 +168,7 @@ class BaseAgent(ABC):
         """Ejecuta la acción."""
         pass
     
-    # --- Bucle de Ejecución Concurrente (CRITICAL FIX) ---
+    # --- Bucle de Ejecución Concurrente ---
 
     async def run_cycle(self):
         """
@@ -179,7 +179,7 @@ class BaseAgent(ABC):
         """
         self.logger.info("Ciclo de ejecución iniciado.")
 
-        # Modificación CRÍTICA: Bucle infinito (True) para mantener el Task vivo.
+        # Bucle infinito (True) para mantener el Task vivo.
         # Esto permite que el agente siga percibiendo comandos como 'status' o 'resume'
         # incluso cuando está en estado STOPPED. El AgentManager es quien debe cancelar
         # la tarea para una parada total del sistema.

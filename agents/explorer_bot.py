@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import statistics
-from functools import reduce  # NECESARIO PARA PROGRAMACIÓN FUNCIONAL
+from functools import reduce  
 from typing import Dict, Any, Tuple, List
 from agents.base_agent import BaseAgent, AgentState
 from mcpi.vec3 import Vec3
@@ -25,7 +25,8 @@ EXPLORATION_BLOCKS = {
 class ExplorerBot(BaseAgent):
     """
     Agente ExplorerBot:
-    Refactorizado para cumplir estrictamente con paradigmas funcionales (Map, Filter, Reduce).
+    Encargado de escanear el terreno, calcular la varianza y sugerir plantillas
+    utilizando paradigmas funcionales.
     """
     def __init__(self, agent_id: str, mc_connection, message_broker):
         super().__init__(agent_id, mc_connection, message_broker)
@@ -79,12 +80,12 @@ class ExplorerBot(BaseAgent):
 
     def _calculate_terrain_variance(self) -> float:
         """
-        Calcula la varianza usando filter y map.
+        Calcula la varianza de altura del terreno explorado.
         """
-        # FUNCIONAL: Filter para obtener solo puntos de superficie
+        # Filtrar solo puntos de superficie
         surface_items = filter(lambda item: item[1] == "surface", self.map_data.items())
         
-        # FUNCIONAL: Map para extraer solo la altura (y) de la clave (x, y, z)
+        # Extraer solo la altura (y) de la clave (x, y, z)
         heights = list(map(lambda item: item[0][1], surface_items))
         
         if len(heights) < 2:
@@ -109,7 +110,7 @@ class ExplorerBot(BaseAgent):
 
     def _get_solid_ground_y(self, x: int, z: int) -> int:
         """
-        Encuentra la altura Y real del suelo sólido usando programación funcional.
+        Encuentra la altura Y real del suelo sólido.        
         """
         try:
             start_y = self.mc.getHeight(x, z)
@@ -129,14 +130,13 @@ class ExplorerBot(BaseAgent):
             block.SNOW.id
         ]
 
-        # FUNCIONAL: Generar rango de alturas hacia abajo
+        # Generar rango de alturas hacia abajo
         depths = range(start_y, start_y - 5, -1)
         
-        # FUNCIONAL: Map para obtener (y, block_id)
-        # Nota: getBlock es imperativo, pero lo envolvemos en el map
+        # Obtener pares (y, block_id)
         blocks_data = map(lambda y: (y, self.mc.getBlock(x, y, z)), depths)
         
-        # FUNCIONAL: Filter para encontrar el primer bloque sólido
+        # Filter para encontrar el primer bloque sólido
         # Usamos next() para obtener el primer elemento que cumpla la condición
         found_solid = next(
             filter(lambda data: data[1] not in NON_SOLID_BLOCKS, blocks_data),
@@ -245,7 +245,7 @@ class ExplorerBot(BaseAgent):
                 self._clear_marker()
 
             elif command == 'set':
-                # FUNCIONAL: Procesamiento de argumentos 'key=value' con filter y map
+                # Procesamiento de argumentos 'key=value' con filter y map
                 valid_args = filter(lambda a: '=' in a, args)
                 split_args = map(lambda a: a.split('=', 1), valid_args)
                 arg_map = dict(split_args)
@@ -284,7 +284,7 @@ class ExplorerBot(BaseAgent):
         new_size = self.exploration_size if self.exploration_size > 0 else 30 
         new_x, new_z = None, None
         
-        # FUNCIONAL: Creación de diccionario de argumentos con filter y map
+        # Creación de diccionario de argumentos con filter y map
         arg_map = dict(map(
             lambda a: a.split('=', 1),
             filter(lambda a: '=' in a, args)

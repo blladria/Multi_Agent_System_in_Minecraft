@@ -8,7 +8,6 @@ from jsonschema import ValidationError as JsonSchemaValidationError
 
 # Configuración del logger para el Broker
 logger = logging.getLogger("MessageBroker")
-# Se eliminó logger.setLevel(logging.INFO) para usar la configuración central
 
 class MessageBroker:
     """
