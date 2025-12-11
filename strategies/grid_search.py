@@ -28,7 +28,7 @@ class GridSearchStrategy(BaseMiningStrategy):
     async def execute(self, requirements: Dict[str, int], inventory: Dict[str, int], position: Vec3, mine_block_callback: Callable):
         
         # 0. Inicialización y Anclaje
-        # # Si es la primera ejecución, guardamos la posición inicial como referencia (0,0) de la rejilla     
+        # Si es la primera ejecución, guardamos la posición inicial como referencia (0,0) de la rejilla     
         if self.start_x is None:    
             self.start_x = int(position.x)
             self.start_z = int(position.z)
@@ -59,7 +59,8 @@ class GridSearchStrategy(BaseMiningStrategy):
         z_target = self.start_z + self.search_z
         
         # 3. Actualizar la posición del agente (marcador)
-        # Manejo de excepciones para evitar caídas del agente si falla la API de Minecraft        try:
+        # Manejo de excepciones para evitar caídas del agente si falla la API de Minecraft
+        try:
             marker_y = self.mc.getHeight(x_target, z_target) + 1 # Altura de pie
         except Exception as e:
             # Si falla la conexión, no crasheamos el agente. Usamos la Y actual o un fallback.
