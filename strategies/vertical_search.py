@@ -8,19 +8,19 @@ from .base_strategy import BaseMiningStrategy
 class VerticalSearchStrategy(BaseMiningStrategy):
     """
     Estrategia de Búsqueda Vertical (Quarry).
-    Excava una columna hacia abajo.
+    Excava una columna hacia abajo hasta llegar al límite.
     """
-    MIN_SAFE_Y = 5   # No bajar más allá de esto (Bedrock)
-    RESTART_Y = 65   # Altura de reinicio de fallback
+    MIN_SAFE_Y = 5   # Límite: No bajar más allá de esto (Bedrock)
+    RESTART_Y = 65   # Altura de reinicio por defecto
     
-    # FIX CRÍTICO: Cambiamos el paso horizontal a 1 para ir al bloque adyacente.
+    # Paso horizontal para reubicación automática al terminar una columna
     HORIZONTAL_STEP = 1
 
     def __init__(self, mc_connection, logger: logging.Logger):
         super().__init__(mc_connection, logger)
         self.cycle_counter = 0 
         self.is_finished = False 
-        # NUEVO: Contador para agrupar minería. En cada execute(), minará 5 bloques.
+        # Contador para agrupar minería. En cada execute(), minará 5 bloques.
         self.blocks_per_step = 5 
 
     # --- FUNCIÓN DE AYUDA PARA CHECKEO DE REQUISITOS ---
@@ -44,10 +44,10 @@ class VerticalSearchStrategy(BaseMiningStrategy):
 
         blocks_mined_in_step = 0
         
-        # Bucle optimizado: Minar varios bloques antes de ceder el control
+        # Bucle que mina varios bloques antes de ceder el control
         while blocks_mined_in_step < self.blocks_per_step and position.y > self.MIN_SAFE_Y:
             
-            # --- CORRECCIÓN CRÍTICA: Terminar Vertical Search si no se necesita el material principal ---
+            # Verificación de requisitos antes de continuar
             if not self._needs_more_mining(requirements, inventory):
                  self.logger.info("VerticalSearch: Todos los materiales cubiertos. Terminando forzadamente la estrategia.")
                  self.is_finished = True
@@ -63,9 +63,7 @@ class VerticalSearchStrategy(BaseMiningStrategy):
             if cobblestone_needed <= 0 and stone_needed <= 0 and dirt_or_sand_needed:
                  self.logger.info("VerticalSearch: Cobblestone y Stone cubiertos, pero falta DIRT/SAND. Terminando para re-seleccionar a GRID.")
                  self.is_finished = True
-                 # Retornamos para que MinerBot.decide re-evalúe en el siguiente ciclo y cambie la estrategia
                  return 
-            # ------------------------------------------------------------------------------------------
             
             # 1. Minar el bloque actual
             mine_pos = position.clone() 
@@ -73,16 +71,16 @@ class VerticalSearchStrategy(BaseMiningStrategy):
             await mine_block_callback(mine_pos)
             blocks_mined_in_step += 1
             
-            # CRÍTICO: Descender inmediatamente en Y (minando un bloque por ciclo de descenso)
+            # Descender inmediatamente en Y (minando un bloque por ciclo de descenso)
             position.y -= 1 
             
-            # Pequeña pausa de CPU, no de I/O de MC. Permite al MinerBot leer mensajes en el `perceive`
+            # Pequeña pausa. Permite al MinerBot leer mensajes en el `perceive`
             await asyncio.sleep(0.01) 
             
         # Logging de descenso solo al terminar el ciclo agrupado
         self.logger.info(f"Agente desciende. Nueva Y interna: {position.y}. Bloques: {blocks_mined_in_step}")
         
-        # 2. Lógica de Movimiento (Comprobar si se alcanzó el fondo)
+        # 2. Comprobar si se alcanzó el fondo
         if position.y <= self.MIN_SAFE_Y:
             self.logger.warning(f"Fondo alcanzado. Finalizando pozo en ({position.x}, {position.z}).")
 
@@ -94,7 +92,6 @@ class VerticalSearchStrategy(BaseMiningStrategy):
                 
                 # 2. Recalculamos Y (para empezar en la superficie del nuevo X)
                 try:
-                    # El MinerBot se encargará de re-lockear/reubicar
                     new_surface_y = self.mc.getHeight(position.x, position.z) + 1
                     position.y = new_surface_y
                 except Exception:
