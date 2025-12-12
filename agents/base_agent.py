@@ -93,14 +93,14 @@ class BaseAgent(ABC):
         """Transición de estado atómica y logueada."""
         prev_state = self._state
         
-        # Si el estado no cambia, no hacemos nada (evita spam de logs)
+        # Si el estado no cambia, no hacemos nada 
         if prev_state == new_state:
             return
 
         # Lógica de liberación de locks (Requerimiento de Sincronización)
         if new_state in (AgentState.STOPPED, AgentState.ERROR):
             self.release_locks()
-            self._clear_marker() # Nuevo: Borrar marcador al detenerse/fallar
+            self._clear_marker() 
             
         # Transición
         self._state = new_state
@@ -168,7 +168,7 @@ class BaseAgent(ABC):
         """Ejecuta la acción."""
         pass
     
-    # --- Bucle de Ejecución Concurrente (CRITICAL FIX) ---
+    # --- Bucle de Ejecución Concurrente ---
 
     async def run_cycle(self):
         """
@@ -178,11 +178,6 @@ class BaseAgent(ABC):
         cancelación externa del AgentManager.
         """
         self.logger.info("Ciclo de ejecución iniciado.")
-
-        # Modificación CRÍTICA: Bucle infinito (True) para mantener el Task vivo.
-        # Esto permite que el agente siga percibiendo comandos como 'status' o 'resume'
-        # incluso cuando está en estado STOPPED. El AgentManager es quien debe cancelar
-        # la tarea para una parada total del sistema.
         while True:
             try:
                 # 1. PERCEIVE: Siempre se ejecuta para leer mensajes (Status, Stop, Resume, etc.)
