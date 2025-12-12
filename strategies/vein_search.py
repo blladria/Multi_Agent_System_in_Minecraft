@@ -8,24 +8,24 @@ from .base_strategy import BaseMiningStrategy
 
 class VeinSearchStrategy(BaseMiningStrategy):
     """
-    Estrategia de Búsqueda de Veta (Implementación Real BFS).
-    Detecta un bloque de mineral requerido y recorre todos los bloques conectados
-    del mismo tipo para extraer la veta completa.
+    Estrategia de Búsqueda de Veta (Vein Search).
+    Utiliza un algoritmo de búsqueda en anchura (BFS) para extraer 
+    agrupaciones contiguas de bloques del mismo tipo (vetas).
     """
     
-    # Offsets para los 6 vecinos (Arriba, Abajo, Norte, Sur, Este, Oeste)
+    # Pensamos en los 6 vecinos (Arriba, Abajo, Norte, Sur, Este, Oeste)
     NEIGHBORS = [
         Vec3(0, 1, 0), Vec3(0, -1, 0), 
         Vec3(1, 0, 0), Vec3(-1, 0, 0), 
         Vec3(0, 0, 1), Vec3(0, 0, -1)
     ]
     
-    # Límite de seguridad para evitar minar el mundo entero si la veta es enorme
+    # Límite máximo de bloques por veta para evitar bucles infinitos o minería excesiva    
     MAX_VEIN_SIZE = 50 
 
     def __init__(self, mc_connection, logger):
         super().__init__(mc_connection, logger)
-        # Mapeo inverso simple para identificar IDs de interés basados en requisitos
+        # Mapeo inverso simple para identificar IDs de los bloques de Minecraft
         self.ore_map = {
             "diamond_ore": block.DIAMOND_ORE.id,
             "gold_ore": block.GOLD_ORE.id,
@@ -61,10 +61,10 @@ class VeinSearchStrategy(BaseMiningStrategy):
             block_id = self.mc.getBlock(start_node.x, start_node.y, start_node.z)
             self.logger.info(f"VeinSearch: ¡Veta encontrada! ID {block_id} en {start_node}")
             
-            # 3. Iniciar Algoritmo de Inundación (Flood Fill / BFS)
+            # 3. Ejecutar extracción de la veta completa
             await self._mine_vein_bfs(start_node, block_id, mine_block_callback)
         else:
-            # Si no encuentra nada cerca, se mueve aleatoriamente para buscar (Random Walk)
+            # Si no encuentra nada cerca, se mueve aleatoriamente para buscar 
             self.logger.debug("VeinSearch: Nada cerca. Buscando...")
             await self._random_walk(position)
 
@@ -78,7 +78,10 @@ class VeinSearchStrategy(BaseMiningStrategy):
         return targets
 
     async def _scan_surroundings(self, center: Vec3, target_ids: List[int]) -> Vec3:
-        """Escanea un cubo de 5x5x5 alrededor del agente."""
+        """
+        Realiza un barrido cúbico (radio 2) alrededor de la posición central
+        para localizar el primer bloque que coincida con los objetivos.
+        """
         radius = 2
         cx, cy, cz = int(center.x), int(center.y), int(center.z)
         
@@ -86,23 +89,22 @@ class VeinSearchStrategy(BaseMiningStrategy):
         for y in range(cy - radius, cy + radius + 1):
             for x in range(cx - radius, cx + radius + 1):
                 for z in range(cz - radius, cz + radius + 1):
-                    # Optimización: No llamar a MC si es aire (imposible saber sin getBlock, 
-                    # pero asumimos que getBlock es rápido en local)
                     try:
                         b_id = self.mc.getBlock(x, y, z)
                         if b_id in target_ids:
                             return Vec3(x, y, z)
                     except:
+                        # Ignorar errores puntuales de lectura
                         pass
         return None
 
     async def _mine_vein_bfs(self, start_pos: Vec3, target_id: int, mine_callback: Callable):
         """
         Algoritmo BFS para minar todos los bloques conectados del mismo tipo.
+        gestionando una cola y un conjunto de visitados.
         """
-        # Cola para el BFS (FIFO)
+        # Cola para el BFS 
         queue: List[Vec3] = [start_node_clone(start_pos)]
-        # Conjunto de visitados para evitar ciclos (usamos tuplas x,y,z para hashing)
         visited: Set[Tuple[int, int, int]] = {(int(start_pos.x), int(start_pos.y), int(start_pos.z))}
         
         blocks_mined = 0
@@ -116,10 +118,7 @@ class VeinSearchStrategy(BaseMiningStrategy):
             # Sacar el siguiente bloque de la cola
             current_pos = queue.pop(0)
 
-            # 1. MINAR EL BLOQUE ACTUAL
-            # Movemos al agente "cerca" del bloque para realismo (opcional, visual)
-            # await self._move_agent_visual(current_pos) 
-            
+           # Intentar minar el bloque
             success = await mine_callback(current_pos)
             
             if success:
@@ -144,7 +143,10 @@ class VeinSearchStrategy(BaseMiningStrategy):
         self.logger.info(f"VeinSearch: Veta terminada. Total bloques extraídos: {blocks_mined}")
 
     async def _random_walk(self, position: Vec3):
-        """Mueve al agente ligeramente si no encuentra nada, para expandir la búsqueda."""
+        """
+        Desplaza al agente a una posición adyacente aleatoria para continuar la búsqueda.
+        Mantiene al agente sobre el nivel del suelo.
+        """
         import random
         # Movimiento aleatorio pequeño en X o Z
         dx = random.choice([-1, 0, 1])
@@ -152,7 +154,7 @@ class VeinSearchStrategy(BaseMiningStrategy):
         
         position.x += dx
         position.z += dz
-        # Ajustar Y al suelo
+        # Ajuste de altura para mantenerse en superficie        
         try:
             position.y = self.mc.getHeight(position.x, position.z) + 1
         except:

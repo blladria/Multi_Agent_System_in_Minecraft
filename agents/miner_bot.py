@@ -3,16 +3,16 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, Callable, Type
-from functools import reduce  # NECESARIO PARA PROGRAMACIÓN FUNCIONAL
+from functools import reduce  
 from agents.base_agent import BaseAgent, AgentState
 from mcpi.vec3 import Vec3
 from mcpi import block
 
-# NUEVAS IMPORTACIONES PARA REFLEXIÓN
+
 from core.agent_manager import AgentDiscovery 
 from strategies.base_strategy import BaseMiningStrategy 
 
-# IMPORTACIÓN DE FALLBACK
+
 from strategies.vertical_search import VerticalSearchStrategy 
 
 # Mapeo de materiales
@@ -33,8 +33,7 @@ MATERIAL_MAP = {
 class MinerBot(BaseAgent):
     """
     Agente MinerBot: Extrae recursos usando estrategias adaptativas.
-    Refactorizado para cumplir estrictamente con paradigmas funcionales (Map, Filter, Reduce).
-    """
+Utiliza paradigmas funcionales para gestión de inventario y selección de objetivos.    """
     # Constante para definir el tamaño de la región que bloquea
     SECTOR_SIZE = 10 
     
@@ -69,19 +68,19 @@ class MinerBot(BaseAgent):
         self._set_marker_properties(block.WOOL.id, 4)
 
     def get_total_volume(self) -> int:
-        # FUNCIONAL: Uso de reduce para sumar valores
+        # Uso de reduce para sumar valores
         return reduce(lambda acc, qty: acc + qty, self.inventory.values(), 0)
 
     def _check_requirements_fulfilled(self) -> bool:
         if not self.requirements: return False
         
-        # FUNCIONAL: Uso de filter para encontrar materiales pendientes
+        # Uso de filter para encontrar materiales pendientes
         pending_items = list(filter(
             lambda item: item[1] > self.inventory.get(item[0], 0),
             self.requirements.items()
         ))
 
-        # Retorna True si la lista de pendientes está vacía
+        # Return True si la lista de pendientes está vacía
         return len(pending_items) == 0
 
     # --- LÓGICA DE EXTRACCIÓN FÍSICA ---
@@ -113,7 +112,7 @@ class MinerBot(BaseAgent):
         elif block_id in [block.WOOD.id, block.LEAVES.id]:
             material_dropped = "wood"
         else:
-             # FUNCIONAL: Búsqueda inversa usando filter y next
+             # Búsqueda inversa usando filter y next
              found = next(
                  filter(lambda item: item[1] == block_id, MATERIAL_MAP.items()), 
                  None
@@ -471,7 +470,7 @@ class MinerBot(BaseAgent):
     async def _select_adaptive_strategy(self):
         if not self.requirements: return 
         
-        # FUNCIONAL: Construir diccionario 'pending' usando filter y map
+        # Construir diccionario 'pending' usando filter y map
         pending_items = filter(
             lambda item: item[1] > self.inventory.get(item[0], 0),
             self.requirements.items()
@@ -486,7 +485,6 @@ class MinerBot(BaseAgent):
 
         if self.manual_strategy_active and self.current_strategy_name == 'vertical':
              needs_dirt_sand = pending.get("dirt", 0) > 0 or pending.get("sand", 0) > 0
-             # FUNCIONAL: Uso de any con map
              needs_stone = any(map(lambda mat: pending.get(mat, 0) > 0, ["cobblestone", "stone"]))
              
              if needs_dirt_sand and not needs_stone:
@@ -541,7 +539,7 @@ class MinerBot(BaseAgent):
         ))
         
         if self.requirements:
-            # FUNCIONAL: Uso de filter y map para formatear cadenas
+            # Uso de filter y map para formatear cadenas
             required_items = filter(lambda item: item[1] > 0, self.requirements.items())
             req_str_parts = map(
                 lambda item: f"{self.inventory.get(item[0], 0)}/{item[1]} {item[0]}",
@@ -554,7 +552,7 @@ class MinerBot(BaseAgent):
         else:
             req_str = "Ninguno"
 
-        # FUNCIONAL: Uso de filter y map para inventario extra
+        # Uso de filter y map para inventario extra
         extra_inv_items = filter(
             lambda item: item[1] > 0 and item[0] not in self.requirements,
             self.inventory.items()

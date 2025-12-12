@@ -43,10 +43,10 @@ def _generate_complex_shelter():
                     # Ventanas (aire) en el centro de las paredes a altura 2
                     if y == 2 and (1 < x < width-2 or 1 < z < depth-2):
                         mat = 'air'
-                    # Esquinas de piedra para soporte visual
+                    # Esquinas de piedra
                     elif (x == 0 or x == width-1) and (z == 0 or z == depth-1):
                         mat = 'cobblestone'
-                    # Resto de paredes de tierra compactada
+                    # Resto de paredes de tierra 
                     else:
                         mat = 'dirt'
                 
@@ -74,7 +74,7 @@ def _generate_chess_tower():
     for y in range(height):
         for x in range(width):
             for z in range(depth):
-                # Hueco interior (x=1, z=1) para poder estar dentro o subir (si hubiera escaleras)
+                # Hueco interior (x=1, z=1) para poder estar dentro o subir 
                 if x == 1 and z == 1:
                     continue
                 
@@ -110,7 +110,7 @@ def _generate_reinforced_bunker():
     structure = []
     width = 7
     depth = 7
-    height = 4 # Bajo y robusto
+    height = 4 
     
     for y in range(height):
         for x in range(width):
@@ -124,7 +124,7 @@ def _generate_reinforced_bunker():
                     # Pared Exterior (Piedra)
                     if x == 0 or x == width - 1 or z == 0 or z == depth - 1:
                         mat = 'cobblestone'
-                    # Pared Interior (Tierra) - Recubrimiento térmico
+                    # Pared Interior (Tierra) 
                     elif x == 1 or x == width - 2 or z == 1 or z == depth - 2:
                         mat = 'dirt'
                     # El centro (x e z entre 2 y 4) queda vacío (aire)
@@ -133,7 +133,6 @@ def _generate_reinforced_bunker():
                 if z == 0 and x == 3 and y in [1, 2]:
                     mat = 'air'
                     # Limpiar también la capa interior de tierra para pasar
-                    # No necesitamos poner aire explícito en la lista, simplemente no agregamos bloque
                     pass 
 
                 # Si es la coordenada de la puerta interior (z=1), tampoco ponemos bloque
@@ -158,7 +157,8 @@ BUILDING_TEMPLATES = {
 class BuilderBot(BaseAgent):
     """
     Agente BuilderBot:
-    Refactorizado para cumplir estrictamente con paradigmas funcionales (Map, Filter, Reduce).
+    Encargado de la construcción de estructuras basadas en plantillas.
+    Utiliza paradigmas funcionales para la gestión de inventario y diseño.
     """
     def __init__(self, agent_id: str, mc_connection, message_broker):
         super().__init__(agent_id, mc_connection, message_broker)
@@ -172,12 +172,12 @@ class BuilderBot(BaseAgent):
         self.current_template_name = "simple_shelter" # Default
         self.current_design = BUILDING_TEMPLATES[self.current_template_name]
         
-        # Bandera para saber si el usuario ha forzado una plantilla manualmente
+        # Flag para saber si el usuario ha forzado una plantilla manualmente
         self.manual_override = False 
         
         self._set_marker_properties(block.WOOL.id, 5)
 
-    # --- Lógica de Inventario (Funcional) ---
+    # --- Lógica de Inventario ---
 
     def _check_inventory(self) -> bool:
         """Verifica si tenemos todos los materiales necesarios usando filter."""
@@ -210,7 +210,7 @@ class BuilderBot(BaseAgent):
                 acc[material_key] = acc.get(material_key, 0) + 1
             return acc
             
-        # FUNCIONAL: Uso de reduce para acumular conteos
+        # Uso de reduce para acumular conteos
         bom = reduce(bom_reducer, design_list, {})
         self.logger.info(f"BOM calculado (funcional): {bom}")
         return bom
@@ -271,7 +271,7 @@ class BuilderBot(BaseAgent):
              start_y_surface = 65
         
         # Centrar la estructura: Calculamos offsets máximos
-        # FUNCIONAL: Uso de map para obtener listas de coordenadas X y Z
+        # Uso de map para obtener listas de coordenadas X y Z
         x_coords = list(map(lambda b: b[0], self.current_design))
         z_coords = list(map(lambda b: b[2], self.current_design))
         
@@ -336,13 +336,13 @@ class BuilderBot(BaseAgent):
         is_ready = True
         
         if self.required_bom:
-            # FUNCIONAL: Map para crear las strings de estado "cantidad/total material"
+            # Map para crear las strings de estado "cantidad/total material"
             req_bom_str = list(map(
                 lambda item: f"{self.current_inventory.get(item[0], 0)}/{item[1]} {item[0]}",
                 self.required_bom.items()
             ))
             
-            # FUNCIONAL: Filter para chequear si hay materiales insuficientes
+            # Filter para chequear si hay materiales insuficientes
             insufficient = list(filter(
                 lambda item: self.current_inventory.get(item[0], 0) < item[1],
                 self.required_bom.items()
@@ -415,7 +415,7 @@ class BuilderBot(BaseAgent):
                         # Notificar al minero los nuevos requisitos
                         await self._publish_requirements_to_miner(status="ACKNOWLEDGED")
                         
-                        # FUNCIONAL: Map para formatear salida
+                        # Map para formatear salida
                         req_str = ", ".join(map(lambda item: f"{item[1]} {item[0]}", self.required_bom.items()))
                         
                         self.logger.info(f"Plan fijado: {template_name}. BOM: {req_str}")
@@ -428,7 +428,7 @@ class BuilderBot(BaseAgent):
                      self.mc.postToChat("[Builder] Plantillas disponibles:")
                      for name, design in BUILDING_TEMPLATES.items():
                          bom = self._calculate_bom_for_specific_design(design)
-                         # FUNCIONAL: Map para formatear salida
+                         # Map para formatear salida
                          bom_str = ", ".join(map(lambda item: f"{item[1]} {item[0]}", bom.items()))
                          self.mc.postToChat(f" - {name}: [{bom_str}]")
             

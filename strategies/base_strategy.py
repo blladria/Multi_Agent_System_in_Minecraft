@@ -7,10 +7,13 @@ import logging
 class BaseMiningStrategy(ABC):
     """
     Clase abstracta base para todas las estrategias de minería.
-    Define el contrato (execute) para el Patrón Estrategia.
+    Implementa el Patrón Estrategia, definiendo el contrato que deben seguir
+    las implementaciones concretas (Vertical, Grid, Vein, etc.).
     """
     def __init__(self, mc_connection, logger: logging.Logger):
-        """Inicializa la estrategia con las dependencias de MC y logging."""
+        """
+        Inicializa la estrategia con las dependencias de conexión y logging.
+        """
         self.mc = mc_connection
         self.logger = logger
 

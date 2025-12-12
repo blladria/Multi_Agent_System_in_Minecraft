@@ -88,13 +88,9 @@ class AgentDiscovery:
         """Descubre todas las clases de Estrategia y las mapea por nombre clave para MinerBot."""
         strategy_classes = AgentDiscovery._discover_classes(package_name, BaseMiningStrategy)
         
-        # CORRECCIÓN: Limpieza de nombre agresiva para coincidir con comandos ('grid', 'vertical')
         strategies_map = {}
         for cls in strategy_classes:
-            # Ejemplo: GridSearchStrategy -> "grid"
-            # 1. replace('SearchStrategy', '') -> "Grid"
-            # 2. replace('Strategy', '') -> (backup por si acaso)
-            # 3. lower() -> "grid"
+            # Limpieza de nombre agresiva para coincidir con comandos ('grid', 'vertical')
             clean_name = cls.__name__.replace('SearchStrategy', '').replace('Strategy', '').lower()
             strategies_map[clean_name] = cls
             

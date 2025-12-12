@@ -11,11 +11,11 @@ from mcpi.vec3 import Vec3
 # Importaciones para Checkpointing
 import json
 import os
-from functools import wraps # Importación para el decorador
+from functools import wraps 
 
 # La configuración de logging se gestiona de forma centralizada en main.py
 
-# --- DECORADOR DE PROGRAMACIÓN FUNCIONAL (Requisito 175) ---
+# --- DECORADOR DE PROGRAMACIÓN FUNCIONAL ---
 def log_execution_time(method_name):
     """
     Decorador que mide y loguea el tiempo de ejecución de una corrutina.
@@ -73,7 +73,7 @@ class BaseAgent(ABC):
         # Intentar cargar el estado si existe
         self._load_checkpoint()
 
-        # VISUALIZACIÓN (NUEVO)
+        # Visualización
         self.marker_block_id = block.WOOL.id # Default: Lana
         self.marker_block_data = 0 # Default: Blanco
         # La posición inicial se establece alta para evitar conflictos
@@ -97,10 +97,14 @@ class BaseAgent(ABC):
         if prev_state == new_state:
             return
 
-        # Lógica de liberación de locks (Requerimiento de Sincronización)
+        # Lógica de liberación de locks
         if new_state in (AgentState.STOPPED, AgentState.ERROR):
             self.release_locks()
+<<<<<<< HEAD
             self._clear_marker() 
+=======
+            self._clear_marker() # Borrar marcador al detenerse/fallar
+>>>>>>> 706830756a2ed8fc611889546c096c092f96fa48
             
         # Transición
         self._state = new_state
@@ -117,12 +121,11 @@ class BaseAgent(ABC):
     def _update_marker(self, new_pos: Vec3):
         """Mueve y actualiza el bloque marcador del agente."""
         
-        # --- FIX ANTI-LAG: Si la posición es la misma, no hacer nada ---
+        # Optimización: Si la posición es la misma, no hacer nada para evitar lag
         if (int(self.marker_position.x) == int(new_pos.x) and 
             int(self.marker_position.y) == int(new_pos.y) and 
             int(self.marker_position.z) == int(new_pos.z)):
             return
-        # ---------------------------------------------------------------
 
         try:
             # Borrar antiguo
@@ -193,7 +196,7 @@ class BaseAgent(ABC):
                     self.logger.error(f"Estado de ERROR. Finalizando tarea.")
                     break
 
-                # Pausa para no saturar la CPU. CRÍTICO para el procesamiento de mensajes.
+                # Pausa para no saturar la CPU.
                 await asyncio.sleep(0.1) 
 
             except asyncio.CancelledError:
@@ -217,7 +220,6 @@ class BaseAgent(ABC):
         if self.state in (AgentState.RUNNING, AgentState.WAITING):
             self._save_checkpoint()
             self.state = AgentState.PAUSED
-            # self.mc.postToChat(f"[{self.agent_id}] PAUSADO.") # El Manager hace el postToChat
 
     def handle_resume(self):
         """Maneja el comando 'resume'."""
@@ -225,7 +227,6 @@ class BaseAgent(ABC):
             self._load_checkpoint()
             # Al reanudar, siempre debe volver a RUNNING. El método 'decide' se encargará de reevaluar.
             self.state = AgentState.RUNNING 
-            # self.mc.postToChat(f"[{self.agent_id}] REANUDADO.") # El Manager hace el postToChat
 
     def handle_stop(self):
         """Maneja el comando 'stop'."""
@@ -235,7 +236,7 @@ class BaseAgent(ABC):
         # NOTA: La liberación de locks se llama en el setter de 'state'
         self.logger.info(f"{self.agent_id} deteniendo operaciones.")
 
-    # --- Métodos de Checkpointing y Sincronización (Implementación de Serialización) ---
+    # --- Métodos de Checkpointing y Sincronización ---
 
     def _save_checkpoint(self):
         """Guarda el contexto actual y el estado en un archivo JSON."""
@@ -243,11 +244,10 @@ class BaseAgent(ABC):
         os.makedirs('checkpoints', exist_ok=True)
         
         # 1. Preparar el estado completo
-        # Clonamos el contexto y añadimos el estado y la posición del marcador
         state_to_save = {
             "state": self._state.name,
             "marker_position": (self.marker_position.x, self.marker_position.y, self.marker_position.z) if hasattr(self, 'marker_position') else (0, 70, 0),
-            "context": self.context # El contexto debe contener datos serializables (str, int, dict, list)
+            "context": self.context 
         }
         
         try:
@@ -291,6 +291,3 @@ class BaseAgent(ABC):
 
     def release_locks(self):
         self.logger.info("Locks liberados.")
-        # Se necesita un método de liberación de locks específico para MinerBot
-        # La propiedad 'state' del BaseAgent llama a este método genérico.
-        # MinerBot ya sobrescribe esto en su propia clase.
