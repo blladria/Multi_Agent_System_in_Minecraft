@@ -100,11 +100,7 @@ class BaseAgent(ABC):
         # Lógica de liberación de locks
         if new_state in (AgentState.STOPPED, AgentState.ERROR):
             self.release_locks()
-<<<<<<< HEAD
             self._clear_marker() 
-=======
-            self._clear_marker() # Borrar marcador al detenerse/fallar
->>>>>>> 706830756a2ed8fc611889546c096c092f96fa48
             
         # Transición
         self._state = new_state
