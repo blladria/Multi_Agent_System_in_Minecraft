@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import logging
-from functools import reduce  # NECESARIO PARA PROGRAMACIÓN FUNCIONAL
+from functools import reduce
 from typing import Dict, Any, Tuple, List
 from agents.base_agent import BaseAgent, AgentState
 from mcpi import block
@@ -18,12 +18,7 @@ MATERIAL_MAP = {
 # --- 2. DEFINICIÓN DE PLANTILLAS (TEMPLATES) ---
 
 def _generate_complex_shelter():
-    """
-    Genera un refugio de 5x5x4.
-    - Accesible: Puerta frontal (aire).
-    - Habitable: Interior hueco.
-    - Materiales: Suelo piedra, techo tierra, paredes mixtas.
-    """
+    """Genera un refugio de 5x5x4."""
     structure = []
     width, height, depth = 5, 4, 5
     
@@ -31,119 +26,53 @@ def _generate_complex_shelter():
         for x in range(width):
             for z in range(depth):
                 mat = 'air'
-                
-                # Suelo (y=0) de piedra
-                if y == 0:
-                    mat = 'cobblestone'
-                # Techo (última capa) de tierra
-                elif y == height - 1:
-                    mat = 'dirt'
-                # Paredes (Perímetro)
+                if y == 0: mat = 'cobblestone'
+                elif y == height - 1: mat = 'dirt'
                 elif x == 0 or x == width - 1 or z == 0 or z == depth - 1:
-                    # Ventanas (aire) en el centro de las paredes a altura 2
-                    if y == 2 and (1 < x < width-2 or 1 < z < depth-2):
-                        mat = 'air'
-                    # Esquinas de piedra
-                    elif (x == 0 or x == width-1) and (z == 0 or z == depth-1):
-                        mat = 'cobblestone'
-                    # Resto de paredes de tierra 
-                    else:
-                        mat = 'dirt'
-                
-                # Puerta (aire) en el frente (z=0), centrada
-                # Altura y=1 y y=2 para que el jugador quepa
-                if z == 0 and x == 2 and y in [1, 2]:
-                    mat = 'air'
-
-                if mat != 'air':
-                    structure.append((x, y, z, mat))
+                    if y == 2 and (1 < x < width-2 or 1 < z < depth-2): mat = 'air'
+                    elif (x == 0 or x == width-1) and (z == 0 or z == depth-1): mat = 'cobblestone'
+                    else: mat = 'dirt'
+                if z == 0 and x == 2 and y in [1, 2]: mat = 'air'
+                if mat != 'air': structure.append((x, y, z, mat))
     return structure
 
 def _generate_chess_tower():
-    """
-    Genera una torre de vigilancia alta (3x3 base).
-    - Accesible: Puerta en la base.
-    - Habitable: Interior hueco (chimenea vertical).
-    - Patrón: Ajedrezado de piedra y tierra.
-    """
+    """Genera una torre de vigilancia alta (3x3 base)."""
     structure = []
-    height = 10
-    width = 3
-    depth = 3
+    height, width, depth = 10, 3, 3
     
     for y in range(height):
         for x in range(width):
             for z in range(depth):
-                # Hueco interior (x=1, z=1) para poder estar dentro o subir 
-                if x == 1 and z == 1:
-                    continue
-                
+                if x == 1 and z == 1: continue
                 mat = 'air'
-                
-                # Almenas en la cima (y=9)
                 if y == height - 1:
-                    # Solo esquinas y centros de lados (patrón almena)
-                    if (x + z) % 2 == 0: 
-                        mat = 'cobblestone'
+                    if (x + z) % 2 == 0: mat = 'cobblestone'
                 else:
-                    # Patrón de ajedrez en las paredes sólidas
-                    if (x + y + z) % 2 == 0:
-                        mat = 'cobblestone'
-                    else:
-                        mat = 'dirt'
-                
-                # Puerta en la base (z=0, x=1) para entrar a la torre
-                if z == 0 and x == 1 and y in [1, 2]:
-                    mat = 'air'
-                
-                if mat != 'air':
-                    structure.append((x, y, z, mat))
+                    if (x + y + z) % 2 == 0: mat = 'cobblestone'
+                    else: mat = 'dirt'
+                if z == 0 and x == 1 and y in [1, 2]: mat = 'air'
+                if mat != 'air': structure.append((x, y, z, mat))
     return structure
 
 def _generate_reinforced_bunker():
-    """
-    Genera un búnker ancho (7x7).
-    - Accesible: Entrada lateral tipo túnel.
-    - Habitable: Gran espacio interior.
-    - Seguridad: Paredes dobles (Piedra fuera, Tierra dentro).
-    """
+    """Genera un búnker ancho (7x7)."""
     structure = []
-    width = 7
-    depth = 7
-    height = 4 
+    width, depth, height = 7, 7, 4
     
     for y in range(height):
         for x in range(width):
             for z in range(depth):
                 mat = 'air'
-                
-                # Suelo y Techo blindados (Piedra completa)
-                if y == 0 or y == height - 1:
-                    mat = 'cobblestone'
+                if y == 0 or y == height - 1: mat = 'cobblestone'
                 else:
-                    # Pared Exterior (Piedra)
-                    if x == 0 or x == width - 1 or z == 0 or z == depth - 1:
-                        mat = 'cobblestone'
-                    # Pared Interior (Tierra) 
-                    elif x == 1 or x == width - 2 or z == 1 or z == depth - 2:
-                        mat = 'dirt'
-                    # El centro (x e z entre 2 y 4) queda vacío (aire)
-                
-                # Entrada (Puerta) en el frente
-                if z == 0 and x == 3 and y in [1, 2]:
-                    mat = 'air'
-                    # Limpiar también la capa interior de tierra para pasar
-                    pass 
-
-                # Si es la coordenada de la puerta interior (z=1), tampoco ponemos bloque
-                if z == 1 and x == 3 and y in [1, 2]:
-                    mat = 'air'
-
-                if mat != 'air':
-                    structure.append((x, y, z, mat))
+                    if x == 0 or x == width - 1 or z == 0 or z == depth - 1: mat = 'cobblestone'
+                    elif x == 1 or x == width - 2 or z == 1 or z == depth - 2: mat = 'dirt'
+                if z == 0 and x == 3 and y in [1, 2]: mat = 'air'
+                if z == 1 and x == 3 and y in [1, 2]: mat = 'air'
+                if mat != 'air': structure.append((x, y, z, mat))
     return structure
 
-# Generación de las listas finales al iniciar el módulo
 TEMPLATE_SHELTER = _generate_complex_shelter()
 TEMPLATE_TOWER = _generate_chess_tower()
 TEMPLATE_BUNKER = _generate_reinforced_bunker()
@@ -158,7 +87,7 @@ class BuilderBot(BaseAgent):
     """
     Agente BuilderBot:
     Encargado de la construcción de estructuras basadas en plantillas.
-    Utiliza paradigmas funcionales para la gestión de inventario y diseño.
+    Modificado para soportar interrupción y reanudación correcta.
     """
     def __init__(self, agent_id: str, mc_connection, message_broker):
         super().__init__(agent_id, mc_connection, message_broker)
@@ -169,48 +98,38 @@ class BuilderBot(BaseAgent):
         self.is_building = False 
         
         # --- GESTIÓN DE PLANTILLAS ---
-        self.current_template_name = "simple_shelter" # Default
+        self.current_template_name = "simple_shelter" 
         self.current_design = BUILDING_TEMPLATES[self.current_template_name]
         
-        # Flag para saber si el usuario ha forzado una plantilla manualmente
         self.manual_override = False 
-        
         self._set_marker_properties(block.WOOL.id, 5)
+
+        # Índice para rastrear el progreso de la construcción
+        self.build_progress_index = 0
 
     # --- Lógica de Inventario ---
 
     def _check_inventory(self) -> bool:
-        """Verifica si tenemos todos los materiales necesarios usando filter."""
-        if not self.required_bom:
-            return False
-        
-        # FUNCIONAL: Filtramos los materiales que NO cumplen el requisito (tengo < necesito)
+        if not self.required_bom: return False
         insufficient_materials = list(filter(
             lambda item: self.current_inventory.get(item[0], 0) < item[1],
             self.required_bom.items()
         ))
-        
-        # Si la lista de insuficientes está vacía, tenemos todo
         return len(insufficient_materials) == 0
                    
     def _calculate_bom_for_structure(self) -> Dict[str, int]:
-        """Calcula el BOM usando reduce sobre el diseño actual."""
         return self._reduce_design_to_bom(self.current_design)
         
     def _calculate_bom_for_specific_design(self, design_list) -> Dict[str, int]:
-        """Calcula el BOM para una lista de diseño dada usando reduce."""
         return self._reduce_design_to_bom(design_list)
 
     def _reduce_design_to_bom(self, design_list) -> Dict[str, int]:
-        """Helper funcional puro para reducir una lista de bloques a un diccionario de conteo."""
         def bom_reducer(acc, block_tuple):
-            # block_tuple es (x, y, z, material_key)
             material_key = block_tuple[3]
             if material_key != 'air':
                 acc[material_key] = acc.get(material_key, 0) + 1
             return acc
-            
-        # Uso de reduce para acumular conteos
+        
         bom = reduce(bom_reducer, design_list, {})
         self.logger.info(f"BOM calculado (funcional): {bom}")
         return bom
@@ -223,15 +142,28 @@ class BuilderBot(BaseAgent):
             await self._handle_message(message)
 
     async def decide(self):
+        """
+        Determina si debe construir o esperar.
+        CORREGIDO: No bloquea el 'resume' si el inventario parcial es menor al BOM total.
+        """
         if self.state == AgentState.RUNNING:
+            # Recuperar progreso del contexto (para resume/crash recovery)
+            if 'build_progress_index' in self.context:
+                self.build_progress_index = self.context['build_progress_index']
+
             if not self.target_zone:
                 self.logger.info("Esperando zona de construccion (Mapa o Jugador).")
                 self.state = AgentState.WAITING 
-            elif not self._check_inventory():
+            
+            # CAMBIO IMPORTANTE AQUÍ:
+            # Solo exigimos el inventario COMPLETO si NO estamos construyendo ya.
+            # Si estamos 'is_building' (reanudando), confiamos en que 'act' gestione los bloques restantes.
+            elif not self.is_building and not self._check_inventory():
                 self.logger.info(f"Esperando materiales para '{self.current_template_name}'.")
                 self.state = AgentState.WAITING 
+            
             else:
-                self.logger.info("Materiales listos y zona definida. Iniciando construccion.")
+                self.logger.info("Materiales listos (o obra en curso) y zona definida. Iniciando/Continuando.")
                 self.is_building = True
 
     async def act(self):
@@ -240,7 +172,6 @@ class BuilderBot(BaseAgent):
             center_x = self.target_zone.get('x', 0)
             center_z = self.target_zone.get('z', 0)
             
-            # Marcador visual de inicio
             try:
                 y_surface = self.mc.getHeight(center_x, center_z)
                 self._update_marker(Vec3(center_x, y_surface + 5, center_z))
@@ -248,30 +179,38 @@ class BuilderBot(BaseAgent):
             
             self._clear_marker()
             
-            # Ejecutar construcción bloque a bloque
+            # Guardar el estado actual antes de empezar
+            self.context['build_progress_index'] = self.build_progress_index
+
+            # Ejecutar construcción (bloque a bloque, interrumpible)
             await self._build_structure(Vec3(center_x, 0, center_z)) 
             
-            # Si terminamos y no nos pausaron/pararon a medias
-            if self.state not in (AgentState.PAUSED, AgentState.STOPPED, AgentState.ERROR):
+            # Solo reseteamos si hemos terminado de verdad (Seguimos en RUNNING)
+            if self.state == AgentState.RUNNING:
                 self.is_building = False
                 self.required_bom = {} 
                 self.state = AgentState.IDLE
-                self.manual_override = False # Resetear override al terminar con éxito
+                self.manual_override = False 
+                
+                # Reseteamos el índice al terminar con éxito
+                self.build_progress_index = 0
+                self.context['build_progress_index'] = 0
+                
                 await self._publish_build_complete()
                 self._clear_marker() 
             else:
-                 self.logger.warning("Construccion interrumpida o pausada.")
+                # Si estamos PAUSED o STOPPED, no hacemos nada, conservamos is_building = True
+                self.logger.warning(f"Construccion interrumpida. Estado: {self.state.name}")
 
     async def _build_structure(self, center_pos: Vec3):
+        """
+        Construye la estructura permitiendo interrupciones inmediatas.
+        """
         center_x, center_z = int(center_pos.x), int(center_pos.z)
         
-        try:
-             start_y_surface = self.mc.getHeight(center_x, center_z) 
-        except Exception:
-             start_y_surface = 65
+        try: start_y_surface = self.mc.getHeight(center_x, center_z) 
+        except Exception: start_y_surface = 65
         
-        # Centrar la estructura: Calculamos offsets máximos
-        # Uso de map para obtener listas de coordenadas X y Z
         x_coords = list(map(lambda b: b[0], self.current_design))
         z_coords = list(map(lambda b: b[2], self.current_design))
         
@@ -281,31 +220,39 @@ class BuilderBot(BaseAgent):
 
         max_x = max(x_coords)
         max_z = max(z_coords)
-        
         x_base = center_x - (max_x // 2)
         z_base = center_z - (max_z // 2)
         y_base = start_y_surface 
         
-        self.logger.info(f"Construyendo '{self.current_template_name}' en base: ({x_base}, {y_base}, {z_base})")
+        self.logger.info(f"Construyendo '{self.current_template_name}'. Progreso: {self.build_progress_index}/{len(self.current_design)}")
 
-        for dx, dy, dz, material_key in self.current_design:
+        # Usamos enumerate para saber por qué bloque vamos
+        for i, (dx, dy, dz, material_key) in enumerate(self.current_design):
             
-            # Chequeo de estado en cada bloque para permitir pausa/stop inmediato
-            if self.state in (AgentState.PAUSED, AgentState.STOPPED, AgentState.ERROR):
+            # Salto rápido: Si este bloque es anterior al índice guardado, saltar
+            if i < self.build_progress_index:
+                continue
+
+            # CRÍTICO: Escuchar mensajes en cada iteración para detectar PAUSE/STOP
+            await self.perceive()
+            
+            # Si el estado ha cambiado a PAUSED, STOPPED o ERROR, salimos inmediatamente
+            if self.state != AgentState.RUNNING:
+                self.logger.info(f"Construcción detenida en bloque {i} por estado {self.state.name}")
                 return 
-            
+
             final_x = x_base + dx
             final_y = y_base + dy
             final_z = z_base + dz
             
             block_id = block.AIR.id
             if material_key != 'air':
-                # Verificar inventario antes de poner cada bloque
+                # Chequeo granular: ¿Tengo ESTE material específico?
                 if self.current_inventory.get(material_key, 0) > 0:
                     block_id = MATERIAL_MAP.get(material_key, block.COBBLESTONE.id)
                 else:
                     self.logger.error(f"Material '{material_key}' agotado a mitad de obra! Pasando a WAITING.")
-                    self.mc.postToChat(f"[Builder] Material '{material_key}' agotado. Pausando construccion. Estado: WAITING.")
+                    self.mc.postToChat(f"[Builder] Material '{material_key}' agotado. Pausando. Estado: WAITING.")
                     self.is_building = False
                     self.state = AgentState.WAITING 
                     return
@@ -313,61 +260,60 @@ class BuilderBot(BaseAgent):
             try:
                 self.mc.setBlock(final_x, final_y, final_z, block_id)
                 
-                # Descontar del inventario solo si no es aire
                 if block_id != block.AIR.id:
                     self.current_inventory[material_key] -= 1
                 
-                # Pequeño delay para simular proceso de construcción y no saturar servidor
+                # Actualizamos el progreso Y EL CONTEXTO tras cada bloque
+                self.build_progress_index = i + 1
+                self.context['build_progress_index'] = self.build_progress_index
+                
                 await asyncio.sleep(0.05) 
 
             except Exception as e:
-                self.logger.error(f"Error poniendo bloque en ({final_x},{final_y},{final_z}): {e}")
-                self.mc.postToChat(f"[Builder] ERROR fatal al construir. Estado: ERROR.")
+                self.logger.error(f"Error poniendo bloque: {e}")
                 self.is_building = False
                 self.state = AgentState.ERROR
                 return
 
-        self.logger.info(f"Construccion de '{self.current_template_name}' finalizada con exito.")
+        self.logger.info(f"Construccion finalizada con exito.")
 
     async def _publish_status(self):
-        """Genera y envía un mensaje de estado detallado usando map y filter."""
-        
         req_bom_str = []
         is_ready = True
         
         if self.required_bom:
-            # Map para crear las strings de estado "cantidad/total material"
             req_bom_str = list(map(
                 lambda item: f"{self.current_inventory.get(item[0], 0)}/{item[1]} {item[0]}",
                 self.required_bom.items()
             ))
-            
-            # Filter para chequear si hay materiales insuficientes
-            insufficient = list(filter(
-                lambda item: self.current_inventory.get(item[0], 0) < item[1],
-                self.required_bom.items()
-            ))
-            is_ready = len(insufficient) == 0
+            # Insuficiente solo es relevante si NO estamos construyendo
+            if not self.is_building:
+                insufficient = list(filter(
+                    lambda item: self.current_inventory.get(item[0], 0) < item[1],
+                    self.required_bom.items()
+                ))
+                is_ready = len(insufficient) == 0
         
-        req_status = "LISTO" if is_ready and self.required_bom else "PENDIENTE"
+        req_status = "LISTO" if is_ready else "PENDIENTE"
         req_str = ", ".join(req_bom_str) if req_bom_str else "Ninguno"
-
         zone_str = f"({self.target_zone.get('x', '?')}, {self.target_zone.get('z', '?')})"
         build_status = "SI" if self.is_building else "NO"
-        
         override_str = " (MANUAL)" if self.manual_override else ""
+        
+        # Progreso numérico
+        total_blocks = len(self.current_design)
+        progress_str = f"{self.build_progress_index}/{total_blocks}" if self.is_building else "N/A"
 
         status_message = (
             f"[{self.agent_id}] Estado: {self.state.name} | Plantilla: {self.current_template_name.upper()}{override_str} | "
             f"Zona: {zone_str}\n"
             f"  > Requisitos ({req_status}): {req_str}\n"
-            f"  > Construyendo: {build_status}"
+            f"  > Construyendo: {build_status} | Progreso: {progress_str}"
         )
         
         self.logger.info(f"Comando 'status' recibido. Reportando: {self.state.name}")
         try: self.mc.postToChat(status_message)
         except Exception: pass
-
 
     async def _handle_message(self, message: Dict[str, Any]):
         msg_type = message.get("type")
@@ -379,7 +325,6 @@ class BuilderBot(BaseAgent):
             args = params.get('args', [])
 
             if command == 'build':
-                # Construcción manual en la posición del jugador
                 try:
                     player_pos = self.mc.player.getTilePos()
                     self.target_zone = {"x": player_pos.x, "z": player_pos.z}
@@ -391,7 +336,6 @@ class BuilderBot(BaseAgent):
                          return
 
                 self.state = AgentState.RUNNING
-                
                 if self._check_inventory():
                     self.is_building = True
                     self.mc.postToChat(f"[Builder] Iniciando construccion de '{self.current_template_name}' en tu posicion.")
@@ -400,27 +344,20 @@ class BuilderBot(BaseAgent):
                     self.state = AgentState.WAITING
             
             elif command == 'plan':
-                # Cambio de plan manual
                 if len(args) >= 2 and args[0] == 'set':
                     template_name = args[1].lower()
                     if template_name in BUILDING_TEMPLATES:
                         self.current_template_name = template_name
                         self.current_design = BUILDING_TEMPLATES[template_name]
-                        
-                        # IMPORTANTE: Activamos el override manual para que Explorer no lo cambie
                         self.manual_override = True 
-                        
                         self.required_bom = self._calculate_bom_for_structure()
                         
-                        # Notificar al minero los nuevos requisitos
+                        # Al cambiar de plan, reiniciamos el progreso
+                        self.build_progress_index = 0
+                        
                         await self._publish_requirements_to_miner(status="ACKNOWLEDGED")
-                        
-                        # Map para formatear salida
                         req_str = ", ".join(map(lambda item: f"{item[1]} {item[0]}", self.required_bom.items()))
-                        
-                        self.logger.info(f"Plan fijado: {template_name}. BOM: {req_str}")
                         self.mc.postToChat(f"[Builder] Plan fijado MANUALMENTE a '{template_name}'. Requisitos: {req_str}. Listo para '/miner fulfill'.")
-
                     else:
                         self.mc.postToChat(f"[Builder] No conozco la plantilla '{template_name}'.")
                 
@@ -428,7 +365,6 @@ class BuilderBot(BaseAgent):
                      self.mc.postToChat("[Builder] Plantillas disponibles:")
                      for name, design in BUILDING_TEMPLATES.items():
                          bom = self._calculate_bom_for_specific_design(design)
-                         # Map para formatear salida
                          bom_str = ", ".join(map(lambda item: f"{item[1]} {item[0]}", bom.items()))
                          self.mc.postToChat(f" - {name}: [{bom_str}]")
             
@@ -461,7 +397,6 @@ class BuilderBot(BaseAgent):
             context = message.get("context", {})
             optimal_zone_center = payload.get("optimal_zone", {}).get("center", {})
 
-            # Actualizar zona objetivo
             if context.get("target_zone"):
                  self.target_zone = context["target_zone"]
             elif optimal_zone_center:
@@ -469,7 +404,6 @@ class BuilderBot(BaseAgent):
 
             suggested = payload.get("suggested_template")
             
-            # LÓGICA DE DECISIÓN: Solo aceptamos la sugerencia si NO hay override manual
             if not self.manual_override:
                 if suggested and suggested in BUILDING_TEMPLATES:
                     self.current_template_name = suggested
@@ -478,8 +412,10 @@ class BuilderBot(BaseAgent):
             else:
                  self.mc.postToChat(f"[Builder] Ignoro sugerencia del Explorer ('{suggested}') porque hay plan manual: '{self.current_template_name}'.")
             
-            # Recalcular BOM y enviarlo
             self.required_bom = self._calculate_bom_for_structure() 
+            # Reiniciar índice si cambia el mapa/plan implícitamente
+            self.build_progress_index = 0
+            
             if self.required_bom:
                 await self._publish_requirements_to_miner(status="PENDING")
             
@@ -493,7 +429,6 @@ class BuilderBot(BaseAgent):
             self.current_inventory.update(new_inventory)
             self.logger.info(f"Inventario actualizado.")
             
-            # Si estábamos esperando materiales, verificamos si ya podemos construir
             if self.state == AgentState.WAITING and self._check_inventory():
                 if self.target_zone:
                     self.state = AgentState.RUNNING
