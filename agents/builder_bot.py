@@ -131,7 +131,7 @@ class BuilderBot(BaseAgent):
             return acc
         
         bom = reduce(bom_reducer, design_list, {})
-        self.logger.info(f"BOM calculado (funcional): {bom}")
+        self.logger.info(f"BOM calculado: {bom}")
         return bom
 
     # --- CICLO DE VIDA ---
@@ -144,7 +144,7 @@ class BuilderBot(BaseAgent):
     async def decide(self):
         """
         Determina si debe construir o esperar.
-        CORREGIDO: No bloquea el 'resume' si el inventario parcial es menor al BOM total.
+        No bloquea el 'resume' si el inventario parcial es menor al BOM total.
         """
         if self.state == AgentState.RUNNING:
             # Recuperar progreso del contexto (para resume/crash recovery)
@@ -154,10 +154,7 @@ class BuilderBot(BaseAgent):
             if not self.target_zone:
                 self.logger.info("Esperando zona de construccion (Mapa o Jugador).")
                 self.state = AgentState.WAITING 
-            
-            # CAMBIO IMPORTANTE AQUÍ:
-            # Solo exigimos el inventario COMPLETO si NO estamos construyendo ya.
-            # Si estamos 'is_building' (reanudando), confiamos en que 'act' gestione los bloques restantes.
+
             elif not self.is_building and not self._check_inventory():
                 self.logger.info(f"Esperando materiales para '{self.current_template_name}'.")
                 self.state = AgentState.WAITING 
