@@ -106,8 +106,6 @@ class ExplorerBot(BaseAgent):
         else:
             return "watch_tower"
 
-    # --- HERRAMIENTAS DE MINECRAFT ---
-
     def _get_solid_ground_y(self, x: int, z: int) -> int:
         """
         Encuentra la altura Y real del suelo sólido.        
